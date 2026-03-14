@@ -3,7 +3,11 @@ module github.com/zlc-ai/opc-platform
 go 1.23.4
 
 require (
+	github.com/bwmarrin/discordgo v0.28.1
+	github.com/gin-gonic/gin v1.10.0
+	github.com/go-telegram-bot-api/telegram-bot-api/v5 v5.5.1
 	github.com/google/uuid v1.6.0
+	github.com/gorilla/websocket v1.5.3
 	github.com/mattn/go-sqlite3 v1.14.34
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/viper v1.21.0
