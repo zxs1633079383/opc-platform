@@ -1,0 +1,11 @@
+apiVersion: opc/v1
+kind: Goal
+metadata:
+  name: develop-messaging-system
+spec:
+  description: 开发企业级消息系统
+  targetCompanies:
+    - software
+    - operations
+    - sales
+  deadline: 2026-04-30

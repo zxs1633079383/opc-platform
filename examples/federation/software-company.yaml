@@ -1,0 +1,10 @@
+apiVersion: opc/v1
+kind: Company
+metadata:
+  name: software
+spec:
+  type: software
+  endpoint: http://software.local:9527
+  agents:
+    - name: backend-dev
+      type: claude-code
