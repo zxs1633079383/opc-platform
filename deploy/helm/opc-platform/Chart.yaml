@@ -1,0 +1,15 @@
+apiVersion: v2
+name: opc-platform
+description: OPC Platform - AI Agent Kubernetes. Manage AI agent clusters like container orchestration.
+type: application
+version: 0.3.0
+appVersion: "0.3.0"
+keywords:
+  - ai
+  - agent
+  - orchestration
+  - platform
+maintainers:
+  - name: ZLC AI
+sources:
+  - https://github.com/zlc-ai/opc-platform

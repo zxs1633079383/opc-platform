@@ -1,0 +1,104 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "opc-platform.fullname" . }}
+  labels:
+    {{- include "opc-platform.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "opc-platform.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "opc-platform.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+              protocol: TCP
+          command: ["opctl", "serve"]
+          args:
+            - "--port"
+            - "{{ .Values.service.port }}"
+          env:
+            {{- if eq .Values.storage.type "postgres" }}
+            - name: OPC_STORAGE_TYPE
+              value: "postgres"
+            - name: OPC_POSTGRES_DSN
+              value: {{ .Values.storage.postgres.dsn | quote }}
+            {{- else }}
+            - name: OPC_STORAGE_TYPE
+              value: "sqlite"
+            - name: OPC_SQLITE_PATH
+              value: {{ .Values.storage.sqlite.path | quote }}
+            {{- end }}
+            {{- if .Values.auth.enabled }}
+            - name: OPC_AUTH_ENABLED
+              value: "true"
+            - name: OPC_JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "opc-platform.fullname" . }}-auth
+                  key: jwt-secret
+            {{- end }}
+            {{- if .Values.gateway.telegram.enabled }}
+            - name: OPC_TELEGRAM_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "opc-platform.fullname" . }}-gateway
+                  key: telegram-token
+            {{- end }}
+            {{- if .Values.gateway.discord.enabled }}
+            - name: OPC_DISCORD_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "opc-platform.fullname" . }}-gateway
+                  key: discord-token
+            {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          {{- if and .Values.persistence.enabled (eq .Values.storage.type "sqlite") }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          {{- end }}
+      {{- if and .Values.persistence.enabled (eq .Values.storage.type "sqlite") }}
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ include "opc-platform.fullname" . }}-data
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
