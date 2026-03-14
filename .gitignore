@@ -1,0 +1,36 @@
+# Go
+*.exe
+*.test
+*.out
+/opc-platform
+/opctl
+
+# Dependencies
+node_modules/
+vendor/
+
+# Build artifacts
+dashboard/.next/
+dashboard/out/
+dist/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data
+*.db
+*.db-journal
+*.db-wal
+cost-events.jsonl
+
+# Environment
+.env
+.env.local
+.env.*.local
