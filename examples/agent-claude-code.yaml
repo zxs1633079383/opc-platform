@@ -1,0 +1,53 @@
+apiVersion: opc/v1
+kind: AgentSpec
+metadata:
+  name: coder
+  labels:
+    role: developer
+    project: my-project
+spec:
+  type: claude-code
+
+  runtime:
+    model:
+      provider: anthropic
+      name: claude-sonnet-4-20250514
+      fallback: claude-haiku-4-5-20251001
+    inference:
+      thinking: medium
+      temperature: 0.7
+      maxTokens: 16384
+    timeout:
+      task: 600s
+      idle: 1800s
+      startup: 10s
+
+  resources:
+    tokenBudget:
+      perTask: 200000
+      perHour: 1000000
+      perDay: 5000000
+    costLimit:
+      perTask: "$2"
+      perDay: "$50"
+      perMonth: "$1000"
+    onExceed: pause
+
+  context:
+    workdir: /workspace/my-project
+    skills:
+      - code-generation
+      - code-review
+      - debugging
+
+  healthCheck:
+    type: heartbeat
+    interval: 120s
+    timeout: 10s
+    retries: 3
+
+  recovery:
+    enabled: true
+    maxRestarts: 3
+    restartDelay: 15s
+    backoff: exponential

@@ -1,0 +1,48 @@
+apiVersion: opc/v1
+kind: AgentSpec
+metadata:
+  name: automation
+  labels:
+    role: automation
+    project: my-project
+spec:
+  type: codex
+
+  runtime:
+    model:
+      provider: openai
+      name: o4-mini
+    inference:
+      thinking: low
+      temperature: 0.3
+      maxTokens: 8192
+    timeout:
+      task: 300s
+      idle: 600s
+      startup: 10s
+
+  resources:
+    tokenBudget:
+      perTask: 50000
+      perHour: 200000
+      perDay: 1000000
+    costLimit:
+      perTask: "$0.50"
+      perDay: "$10"
+      perMonth: "$200"
+    onExceed: alert
+
+  context:
+    workdir: /workspace/my-project
+
+  healthCheck:
+    type: heartbeat
+    interval: 60s
+    timeout: 10s
+    retries: 3
+
+  recovery:
+    enabled: true
+    maxRestarts: 5
+    restartDelay: 10s
+    backoff: exponential

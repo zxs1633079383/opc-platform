@@ -1,0 +1,46 @@
+apiVersion: opc/v1
+kind: AgentSpec
+metadata:
+  name: my-custom-agent
+  labels:
+    role: assistant
+    project: my-project
+spec:
+  type: custom
+
+  command: ["python", "my_agent.py"]
+  args: ["--mode", "daemon"]
+  env:
+    OPENAI_API_KEY: "${OPENAI_API_KEY}"
+    LOG_LEVEL: "info"
+
+  protocol:
+    type: stdio
+    format: jsonl
+
+  runtime:
+    timeout:
+      task: 120s
+      idle: 300s
+      startup: 15s
+
+  resources:
+    tokenBudget:
+      perTask: 10000
+      perDay: 100000
+    costLimit:
+      perTask: "$0.10"
+      perDay: "$5"
+    onExceed: pause
+
+  healthCheck:
+    type: heartbeat
+    interval: 30s
+    timeout: 5s
+    retries: 5
+
+  recovery:
+    enabled: true
+    maxRestarts: 3
+    restartDelay: 5s
+    backoff: linear

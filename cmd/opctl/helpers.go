@@ -6,6 +6,9 @@ import (
 
 	"github.com/zlc-ai/opc-platform/internal/config"
 	"github.com/zlc-ai/opc-platform/pkg/adapter"
+	"github.com/zlc-ai/opc-platform/pkg/adapter/claudecode"
+	"github.com/zlc-ai/opc-platform/pkg/adapter/codex"
+	"github.com/zlc-ai/opc-platform/pkg/adapter/custom"
 	"github.com/zlc-ai/opc-platform/pkg/adapter/openclaw"
 	"github.com/zlc-ai/opc-platform/pkg/controller"
 	"github.com/zlc-ai/opc-platform/pkg/storage/sqlite"
@@ -29,6 +32,15 @@ func getController() (*controller.Controller, func(), error) {
 	registry := adapter.NewRegistry()
 	registry.Register(v1.AgentTypeOpenClaw, func() adapter.Adapter {
 		return openclaw.New()
+	})
+	registry.Register(v1.AgentTypeClaudeCode, func() adapter.Adapter {
+		return claudecode.New()
+	})
+	registry.Register(v1.AgentTypeCodex, func() adapter.Adapter {
+		return codex.New()
+	})
+	registry.Register(v1.AgentTypeCustom, func() adapter.Adapter {
+		return custom.New()
 	})
 
 	logger := config.Logger

@@ -20,6 +20,10 @@ type Controller struct {
 	registry *adapter.Registry
 	agents   map[string]*managedAgent
 	logger   *zap.SugaredLogger
+
+	// Lifecycle management fields.
+	lifecycleMu     sync.Mutex
+	lifecycleStates map[string]*lifecycleState
 }
 
 // managedAgent tracks a running agent instance.
