@@ -215,3 +215,166 @@ type Resource struct {
 	Kind       string   `yaml:"kind"`
 	Metadata   Metadata `yaml:"metadata"`
 }
+
+// --- Goal/Project hierarchy types ---
+
+// GoalSpec defines a strategic goal.
+type GoalSpec struct {
+	APIVersion string   `yaml:"apiVersion" json:"apiVersion"`
+	Kind       string   `yaml:"kind" json:"kind"`
+	Metadata   Metadata `yaml:"metadata" json:"metadata"`
+	Spec       GoalBody `yaml:"spec" json:"spec"`
+}
+
+// GoalBody contains the spec fields for a Goal.
+type GoalBody struct {
+	Description     string            `yaml:"description" json:"description"`
+	Owner           string            `yaml:"owner,omitempty" json:"owner,omitempty"`
+	Deadline        string            `yaml:"deadline,omitempty" json:"deadline,omitempty"`
+	SuccessCriteria []SuccessCriterion `yaml:"successCriteria,omitempty" json:"successCriteria,omitempty"`
+	Budget          BudgetConfig      `yaml:"budget,omitempty" json:"budget,omitempty"`
+}
+
+// SuccessCriterion defines a measurable success metric.
+type SuccessCriterion struct {
+	Metric string `yaml:"metric" json:"metric"`
+	Target int    `yaml:"target" json:"target"`
+}
+
+// BudgetConfig defines budget limits.
+type BudgetConfig struct {
+	Total string `yaml:"total,omitempty" json:"total,omitempty"`
+	Alert string `yaml:"alert,omitempty" json:"alert,omitempty"`
+}
+
+// ProjectSpec defines a project under a goal.
+type ProjectSpec struct {
+	APIVersion string      `yaml:"apiVersion" json:"apiVersion"`
+	Kind       string      `yaml:"kind" json:"kind"`
+	Metadata   Metadata    `yaml:"metadata" json:"metadata"`
+	Spec       ProjectBody `yaml:"spec" json:"spec"`
+}
+
+// ProjectBody contains the spec fields for a Project.
+type ProjectBody struct {
+	Description string   `yaml:"description" json:"description"`
+	GoalRef     string   `yaml:"goalRef,omitempty" json:"goalRef,omitempty"`
+	Agents      []string `yaml:"agents,omitempty" json:"agents,omitempty"`
+}
+
+// IssueSpec defines an execution unit under a task.
+type IssueSpec struct {
+	APIVersion string    `yaml:"apiVersion" json:"apiVersion"`
+	Kind       string    `yaml:"kind" json:"kind"`
+	Metadata   Metadata  `yaml:"metadata" json:"metadata"`
+	Spec       IssueBody `yaml:"spec" json:"spec"`
+}
+
+// IssueBody contains the spec fields for an Issue.
+type IssueBody struct {
+	Description string `yaml:"description" json:"description"`
+	TaskRef     string `yaml:"taskRef,omitempty" json:"taskRef,omitempty"`
+	AgentRef    string `yaml:"agentRef,omitempty" json:"agentRef,omitempty"`
+	Message     string `yaml:"message,omitempty" json:"message,omitempty"`
+}
+
+// --- Workflow types ---
+
+// WorkflowSpec defines a multi-step workflow.
+type WorkflowSpec struct {
+	APIVersion string       `yaml:"apiVersion" json:"apiVersion"`
+	Kind       string       `yaml:"kind" json:"kind"`
+	Metadata   Metadata     `yaml:"metadata" json:"metadata"`
+	Spec       WorkflowBody `yaml:"spec" json:"spec"`
+}
+
+// WorkflowBody contains the spec fields for a Workflow.
+type WorkflowBody struct {
+	Schedule string         `yaml:"schedule,omitempty" json:"schedule,omitempty"`
+	Steps    []WorkflowStep `yaml:"steps" json:"steps"`
+}
+
+// WorkflowStep defines a single step in a workflow.
+type WorkflowStep struct {
+	Name      string           `yaml:"name" json:"name"`
+	Agent     string           `yaml:"agent" json:"agent"`
+	DependsOn []string         `yaml:"dependsOn,omitempty" json:"dependsOn,omitempty"`
+	Input     WorkflowInput    `yaml:"input" json:"input"`
+	Outputs   []WorkflowOutput `yaml:"outputs,omitempty" json:"outputs,omitempty"`
+}
+
+// WorkflowInput defines the input for a workflow step.
+type WorkflowInput struct {
+	Message string   `yaml:"message" json:"message"`
+	Context []string `yaml:"context,omitempty" json:"context,omitempty"`
+}
+
+// WorkflowOutput defines a named output from a workflow step.
+type WorkflowOutput struct {
+	Name string `yaml:"name" json:"name"`
+}
+
+// WorkflowStatus represents the status of a workflow run.
+type WorkflowStatus string
+
+const (
+	WorkflowStatusPending   WorkflowStatus = "Pending"
+	WorkflowStatusRunning   WorkflowStatus = "Running"
+	WorkflowStatusCompleted WorkflowStatus = "Completed"
+	WorkflowStatusFailed    WorkflowStatus = "Failed"
+)
+
+// WorkflowRecord represents a persisted workflow definition.
+type WorkflowRecord struct {
+	Name      string `json:"name"`
+	SpecYAML  string `json:"specYaml"`
+	Schedule  string `json:"schedule,omitempty"`
+	Enabled   bool   `json:"enabled"`
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+// WorkflowRunRecord represents a persisted workflow execution.
+type WorkflowRunRecord struct {
+	ID           string         `json:"id"`
+	WorkflowName string         `json:"workflowName"`
+	Status       WorkflowStatus `json:"status"`
+	StepsJSON    string         `json:"stepsJson"`
+	StartedAt    time.Time      `json:"startedAt"`
+	EndedAt      *time.Time     `json:"endedAt,omitempty"`
+}
+
+// --- Dispatcher types ---
+
+// DispatcherSpec defines the dispatcher configuration.
+type DispatcherSpec struct {
+	APIVersion string         `yaml:"apiVersion" json:"apiVersion"`
+	Kind       string         `yaml:"kind" json:"kind"`
+	Metadata   Metadata       `yaml:"metadata" json:"metadata"`
+	Spec       DispatcherBody `yaml:"spec" json:"spec"`
+}
+
+// DispatcherBody contains the spec fields for a Dispatcher.
+type DispatcherBody struct {
+	Strategy string        `yaml:"strategy" json:"strategy"`
+	Routing  []RoutingRule `yaml:"routing,omitempty" json:"routing,omitempty"`
+	Fallback FallbackRule  `yaml:"fallback,omitempty" json:"fallback,omitempty"`
+}
+
+// RoutingRule defines how to match and route tasks.
+type RoutingRule struct {
+	Match      MatchCriteria `yaml:"match" json:"match"`
+	Agents     []string      `yaml:"agents" json:"agents"`
+	Preference string        `yaml:"preference,omitempty" json:"preference,omitempty"`
+}
+
+// MatchCriteria defines matching conditions.
+type MatchCriteria struct {
+	TaskType string            `yaml:"taskType,omitempty" json:"taskType,omitempty"`
+	Labels   map[string]string `yaml:"labels,omitempty" json:"labels,omitempty"`
+}
+
+// FallbackRule defines the fallback agent.
+type FallbackRule struct {
+	Agent string `yaml:"agent" json:"agent"`
+}

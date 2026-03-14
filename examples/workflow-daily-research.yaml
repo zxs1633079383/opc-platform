@@ -1,0 +1,34 @@
+apiVersion: opc/v1
+kind: Workflow
+metadata:
+  name: daily-research
+  labels:
+    type: automation
+spec:
+  schedule: "0 7 * * *"
+
+  steps:
+    - name: research
+      agent: researcher
+      input:
+        message: "Search for the latest AI Agent news and developments"
+      outputs:
+        - name: findings
+
+    - name: analyze
+      agent: analyst
+      dependsOn: [research]
+      input:
+        message: "Analyze the following research findings and extract key insights"
+        context:
+          - "${{ steps.research.outputs.findings }}"
+      outputs:
+        - name: report
+
+    - name: publish
+      agent: writer
+      dependsOn: [analyze]
+      input:
+        message: "Write a concise daily report from this analysis"
+        context:
+          - "${{ steps.analyze.outputs.report }}"

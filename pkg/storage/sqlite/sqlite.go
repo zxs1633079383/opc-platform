@@ -61,6 +61,24 @@ func (s *sqliteStore) migrate() error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_tasks_agent ON tasks(agent_name)`,
 		`CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status)`,
+		`CREATE TABLE IF NOT EXISTS workflows (
+			name       TEXT PRIMARY KEY,
+			spec_yaml  TEXT NOT NULL DEFAULT '',
+			schedule   TEXT NOT NULL DEFAULT '',
+			enabled    INTEGER NOT NULL DEFAULT 1,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE TABLE IF NOT EXISTS workflow_runs (
+			id            TEXT PRIMARY KEY,
+			workflow_name TEXT NOT NULL,
+			status        TEXT NOT NULL DEFAULT 'Pending',
+			steps_json    TEXT NOT NULL DEFAULT '{}',
+			started_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			ended_at      DATETIME,
+			FOREIGN KEY (workflow_name) REFERENCES workflows(name)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_workflow_runs_name ON workflow_runs(workflow_name)`,
 	}
 
 	for _, m := range migrations {
@@ -219,6 +237,149 @@ func (s *sqliteStore) UpdateTask(ctx context.Context, task v1.TaskRecord) error 
 	)
 	if err != nil {
 		return fmt.Errorf("update task %q: %w", task.ID, err)
+	}
+	return nil
+}
+
+// --- Workflow operations ---
+
+func (s *sqliteStore) CreateWorkflow(ctx context.Context, wf v1.WorkflowRecord) error {
+	now := time.Now()
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO workflows (name, spec_yaml, schedule, enabled, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?)`,
+		wf.Name, wf.SpecYAML, wf.Schedule, wf.Enabled, now, now,
+	)
+	if err != nil {
+		return fmt.Errorf("create workflow %q: %w", wf.Name, err)
+	}
+	return nil
+}
+
+func (s *sqliteStore) GetWorkflow(ctx context.Context, name string) (v1.WorkflowRecord, error) {
+	row := s.db.QueryRowContext(ctx,
+		`SELECT name, spec_yaml, schedule, enabled, created_at, updated_at
+		 FROM workflows WHERE name = ?`, name,
+	)
+	var wf v1.WorkflowRecord
+	err := row.Scan(&wf.Name, &wf.SpecYAML, &wf.Schedule, &wf.Enabled, &wf.CreatedAt, &wf.UpdatedAt)
+	if err != nil {
+		return wf, fmt.Errorf("get workflow %q: %w", name, err)
+	}
+	return wf, nil
+}
+
+func (s *sqliteStore) ListWorkflows(ctx context.Context) ([]v1.WorkflowRecord, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT name, spec_yaml, schedule, enabled, created_at, updated_at
+		 FROM workflows ORDER BY created_at`)
+	if err != nil {
+		return nil, fmt.Errorf("list workflows: %w", err)
+	}
+	defer rows.Close()
+
+	var workflows []v1.WorkflowRecord
+	for rows.Next() {
+		var wf v1.WorkflowRecord
+		if err := rows.Scan(&wf.Name, &wf.SpecYAML, &wf.Schedule, &wf.Enabled, &wf.CreatedAt, &wf.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("scan workflow: %w", err)
+		}
+		workflows = append(workflows, wf)
+	}
+	return workflows, rows.Err()
+}
+
+func (s *sqliteStore) UpdateWorkflow(ctx context.Context, wf v1.WorkflowRecord) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE workflows SET spec_yaml=?, schedule=?, enabled=?, updated_at=?
+		 WHERE name=?`,
+		wf.SpecYAML, wf.Schedule, wf.Enabled, time.Now(), wf.Name,
+	)
+	if err != nil {
+		return fmt.Errorf("update workflow %q: %w", wf.Name, err)
+	}
+	return nil
+}
+
+func (s *sqliteStore) DeleteWorkflow(ctx context.Context, name string) error {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM workflows WHERE name = ?`, name)
+	if err != nil {
+		return fmt.Errorf("delete workflow %q: %w", name, err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("workflow %q not found", name)
+	}
+	return nil
+}
+
+// --- Workflow run operations ---
+
+func (s *sqliteStore) CreateWorkflowRun(ctx context.Context, run v1.WorkflowRunRecord) error {
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO workflow_runs (id, workflow_name, status, steps_json, started_at, ended_at)
+		 VALUES (?, ?, ?, ?, ?, ?)`,
+		run.ID, run.WorkflowName, string(run.Status), run.StepsJSON, run.StartedAt, run.EndedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("create workflow run %q: %w", run.ID, err)
+	}
+	return nil
+}
+
+func (s *sqliteStore) GetWorkflowRun(ctx context.Context, id string) (v1.WorkflowRunRecord, error) {
+	row := s.db.QueryRowContext(ctx,
+		`SELECT id, workflow_name, status, steps_json, started_at, ended_at
+		 FROM workflow_runs WHERE id = ?`, id,
+	)
+	var run v1.WorkflowRunRecord
+	var status string
+	var endedAt sql.NullTime
+	err := row.Scan(&run.ID, &run.WorkflowName, &status, &run.StepsJSON, &run.StartedAt, &endedAt)
+	if err != nil {
+		return run, fmt.Errorf("get workflow run %q: %w", id, err)
+	}
+	run.Status = v1.WorkflowStatus(status)
+	if endedAt.Valid {
+		run.EndedAt = &endedAt.Time
+	}
+	return run, nil
+}
+
+func (s *sqliteStore) ListWorkflowRuns(ctx context.Context, workflowName string) ([]v1.WorkflowRunRecord, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, workflow_name, status, steps_json, started_at, ended_at
+		 FROM workflow_runs WHERE workflow_name = ? ORDER BY started_at DESC`, workflowName)
+	if err != nil {
+		return nil, fmt.Errorf("list workflow runs: %w", err)
+	}
+	defer rows.Close()
+
+	var runs []v1.WorkflowRunRecord
+	for rows.Next() {
+		var run v1.WorkflowRunRecord
+		var status string
+		var endedAt sql.NullTime
+		if err := rows.Scan(&run.ID, &run.WorkflowName, &status, &run.StepsJSON, &run.StartedAt, &endedAt); err != nil {
+			return nil, fmt.Errorf("scan workflow run: %w", err)
+		}
+		run.Status = v1.WorkflowStatus(status)
+		if endedAt.Valid {
+			run.EndedAt = &endedAt.Time
+		}
+		runs = append(runs, run)
+	}
+	return runs, rows.Err()
+}
+
+func (s *sqliteStore) UpdateWorkflowRun(ctx context.Context, run v1.WorkflowRunRecord) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE workflow_runs SET status=?, steps_json=?, ended_at=?
+		 WHERE id=?`,
+		string(run.Status), run.StepsJSON, run.EndedAt, run.ID,
+	)
+	if err != nil {
+		return fmt.Errorf("update workflow run %q: %w", run.ID, err)
 	}
 	return nil
 }

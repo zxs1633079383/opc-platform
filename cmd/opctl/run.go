@@ -7,6 +7,8 @@ import (
 
 	"github.com/spf13/cobra"
 	v1 "github.com/zlc-ai/opc-platform/api/v1"
+	"github.com/zlc-ai/opc-platform/internal/config"
+	"github.com/zlc-ai/opc-platform/pkg/workflow"
 )
 
 var runCmd = &cobra.Command{
@@ -20,6 +22,13 @@ var runTaskCmd = &cobra.Command{
 	RunE:  runRunTask,
 }
 
+var runWorkflowCmd = &cobra.Command{
+	Use:   "workflow <name>",
+	Short: "Execute a workflow",
+	Args:  cobra.ExactArgs(1),
+	RunE:  runRunWorkflow,
+}
+
 var (
 	runAgentName string
 	runStream    bool
@@ -31,6 +40,7 @@ func init() {
 	runTaskCmd.Flags().BoolVar(&runStream, "stream", false, "enable streaming output")
 
 	runCmd.AddCommand(runTaskCmd)
+	runCmd.AddCommand(runWorkflowCmd)
 	rootCmd.AddCommand(runCmd)
 
 	// Also allow `opctl run --agent <name> "message"` directly.
@@ -97,6 +107,65 @@ func runRunTask(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+func runRunWorkflow(cmd *cobra.Command, args []string) error {
+	name := args[0]
+
+	ctrl, cleanup, err := getController()
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	wf, err := ctrl.Store().GetWorkflow(cmd.Context(), name)
+	if err != nil {
+		return fmt.Errorf("workflow %q not found: %w", name, err)
+	}
+
+	spec, err := workflow.ParseWorkflow([]byte(wf.SpecYAML))
+	if err != nil {
+		return fmt.Errorf("parse workflow: %w", err)
+	}
+
+	logger := config.Logger
+	if logger == nil {
+		config.InitLogger(false)
+		logger = config.Logger
+	}
+
+	engine := workflow.NewEngine(ctrl, ctrl.Store(), logger)
+
+	fmt.Printf("Running workflow/%s...\n", name)
+
+	run, err := engine.Execute(cmd.Context(), spec)
+	if err != nil {
+		fmt.Printf("workflow/%s failed: %v\n", name, err)
+		if run != nil {
+			printWorkflowRun(run)
+		}
+		return err
+	}
+
+	printWorkflowRun(run)
+	return nil
+}
+
+func printWorkflowRun(run *workflow.WorkflowRun) {
+	fmt.Printf("\nWorkflow Run: %s\n", run.ID)
+	fmt.Printf("Status: %s\n", run.Status)
+	fmt.Printf("Started: %s\n", run.StartedAt.Format(time.RFC3339))
+	if run.EndedAt != nil {
+		fmt.Printf("Duration: %s\n", run.EndedAt.Sub(run.StartedAt))
+	}
+	fmt.Println("\nSteps:")
+	for _, sr := range run.Steps {
+		fmt.Printf("  %s: %s", sr.Name, sr.Status)
+		if sr.Error != "" {
+			fmt.Printf(" (error: %s)", sr.Error)
+		}
+		fmt.Println()
+	}
 }
 
 func generateTaskID() string {

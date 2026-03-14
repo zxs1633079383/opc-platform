@@ -32,9 +32,17 @@ var getTasksCmd = &cobra.Command{
 	RunE:    runGetTasks,
 }
 
+var getWorkflowsCmd = &cobra.Command{
+	Use:     "workflows",
+	Aliases: []string{"workflow", "wf"},
+	Short:   "List all workflows",
+	RunE:    runGetWorkflows,
+}
+
 func init() {
 	getCmd.AddCommand(getAgentsCmd)
 	getCmd.AddCommand(getTasksCmd)
+	getCmd.AddCommand(getWorkflowsCmd)
 	rootCmd.AddCommand(getCmd)
 }
 
@@ -129,6 +137,46 @@ func formatAge(d time.Duration) string {
 		return fmt.Sprintf("%dh", int(d.Hours()))
 	default:
 		return fmt.Sprintf("%dd", int(d.Hours()/24))
+	}
+}
+
+func runGetWorkflows(cmd *cobra.Command, args []string) error {
+	ctrl, cleanup, err := getController()
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	workflows, err := ctrl.Store().ListWorkflows(cmd.Context())
+	if err != nil {
+		return err
+	}
+
+	if len(workflows) == 0 {
+		fmt.Println("No workflows found.")
+		return nil
+	}
+
+	format, _ := cmd.Flags().GetString("output")
+	switch format {
+	case "json":
+		return printJSON(workflows)
+	default:
+		w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+		fmt.Fprintln(w, "NAME\tSCHEDULE\tENABLED\tAGE")
+		for _, wf := range workflows {
+			schedule := wf.Schedule
+			if schedule == "" {
+				schedule = "-"
+			}
+			enabled := "yes"
+			if !wf.Enabled {
+				enabled = "no"
+			}
+			age := formatAge(time.Since(wf.CreatedAt))
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", wf.Name, schedule, enabled, age)
+		}
+		return w.Flush()
 	}
 }
 

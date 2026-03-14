@@ -22,6 +22,19 @@ type Store interface {
 	ListTasksByAgent(ctx context.Context, agentName string) ([]v1.TaskRecord, error)
 	UpdateTask(ctx context.Context, task v1.TaskRecord) error
 
+	// Workflow operations.
+	CreateWorkflow(ctx context.Context, wf v1.WorkflowRecord) error
+	GetWorkflow(ctx context.Context, name string) (v1.WorkflowRecord, error)
+	ListWorkflows(ctx context.Context) ([]v1.WorkflowRecord, error)
+	UpdateWorkflow(ctx context.Context, wf v1.WorkflowRecord) error
+	DeleteWorkflow(ctx context.Context, name string) error
+
+	// Workflow run operations.
+	CreateWorkflowRun(ctx context.Context, run v1.WorkflowRunRecord) error
+	GetWorkflowRun(ctx context.Context, id string) (v1.WorkflowRunRecord, error)
+	ListWorkflowRuns(ctx context.Context, workflowName string) ([]v1.WorkflowRunRecord, error)
+	UpdateWorkflowRun(ctx context.Context, run v1.WorkflowRunRecord) error
+
 	// Close releases all resources.
 	Close() error
 }
