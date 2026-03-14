@@ -89,8 +89,16 @@ func (s *Server) Start(ctx context.Context) error {
 		api.GET("/tasks/:id", s.getTask)
 
 		// --- metrics ---
+		api.GET("/metrics", s.clusterMetrics)
 		api.GET("/metrics/agents", s.agentMetrics)
 		api.GET("/metrics/health", s.agentHealth)
+
+		// --- costs ---
+		api.GET("/costs/daily", s.costDaily)
+		api.GET("/costs/events", s.costEvents)
+
+		// --- logs ---
+		api.GET("/logs", s.getLogs)
 
 		// --- workflows ---
 		api.GET("/workflows", s.listWorkflows)
@@ -447,4 +455,112 @@ func (s *Server) runWorkflow(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, run)
+}
+
+// ---- cluster metrics (dashboard aggregate) ----
+
+func (s *Server) clusterMetrics(c *gin.Context) {
+	ctx := c.Request.Context()
+	agents, _ := s.controller.ListAgents(ctx)
+	tasks, _ := s.controller.Store().ListTasks(ctx)
+
+	var runningAgents int
+	for _, a := range agents {
+		if a.Phase == v1.AgentPhaseRunning {
+			runningAgents++
+		}
+	}
+
+	var runningTasks, completedTasks, failedTasks int
+	var todayCost float64
+	now := time.Now()
+	startOfDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	for _, t := range tasks {
+		switch t.Status {
+		case v1.TaskStatusRunning:
+			runningTasks++
+		case v1.TaskStatusCompleted:
+			completedTasks++
+		case v1.TaskStatusFailed:
+			failedTasks++
+		}
+		if !t.CreatedAt.Before(startOfDay) {
+			todayCost += t.Cost
+		}
+	}
+
+	var monthCost, dailyBudget, monthlyBudget float64
+	if s.costMgr != nil {
+		status := s.costMgr.GetBudgetStatus()
+		monthCost = status.MonthlySpent
+		dailyBudget = status.DailyLimit
+		monthlyBudget = status.MonthlyLimit
+		todayCost = status.DailySpent
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"totalAgents":    len(agents),
+		"runningAgents":  runningAgents,
+		"totalTasks":     len(tasks),
+		"runningTasks":   runningTasks,
+		"completedTasks": completedTasks,
+		"failedTasks":    failedTasks,
+		"todayCost":      todayCost,
+		"monthCost":      monthCost,
+		"dailyBudget":    dailyBudget,
+		"monthlyBudget":  monthlyBudget,
+	})
+}
+
+// ---- costs ----
+
+func (s *Server) costDaily(c *gin.Context) {
+	if s.costMgr == nil {
+		c.JSON(http.StatusOK, []gin.H{})
+		return
+	}
+
+	// Aggregate costs per day for the last 7 days.
+	now := time.Now()
+	days := make([]gin.H, 7)
+	for i := 6; i >= 0; i-- {
+		day := now.AddDate(0, 0, -i)
+		dateStr := day.Format("2006-01-02")
+		report := s.costMgr.GenerateReport("", 24*time.Hour*time.Duration(i+1))
+		days[6-i] = gin.H{"date": dateStr, "cost": report.TotalCost}
+	}
+
+	// Re-compute properly: get report per each day.
+	result := make([]gin.H, 0, 7)
+	for i := 6; i >= 0; i-- {
+		day := now.AddDate(0, 0, -i)
+		dateStr := day.Format("2006-01-02")
+
+		// Get costs for this specific day by computing diff.
+		// Simpler approach: use the cost tracker's events directly.
+		startOfDay := time.Date(day.Year(), day.Month(), day.Day(), 0, 0, 0, 0, day.Location())
+		endOfDay := startOfDay.Add(24 * time.Hour)
+
+		dayCost := s.costMgr.DayCost(startOfDay, endOfDay)
+		result = append(result, gin.H{"date": dateStr, "cost": dayCost})
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+func (s *Server) costEvents(c *gin.Context) {
+	if s.costMgr == nil {
+		c.JSON(http.StatusOK, []gin.H{})
+		return
+	}
+
+	events := s.costMgr.RecentEvents(100)
+	c.JSON(http.StatusOK, events)
+}
+
+// ---- logs ----
+
+func (s *Server) getLogs(c *gin.Context) {
+	// Return recent audit log entries.
+	// For now, return an empty array; actual log storage can be added later.
+	c.JSON(http.StatusOK, []gin.H{})
 }

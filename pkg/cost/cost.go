@@ -361,6 +361,35 @@ func (t *Tracker) ExportCSV() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+// DayCost returns total cost for events between start and end times.
+func (t *Tracker) DayCost(start, end time.Time) float64 {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+
+	var total float64
+	for _, e := range t.events {
+		if !e.Timestamp.Before(start) && e.Timestamp.Before(end) {
+			total += e.TotalCost
+		}
+	}
+	return total
+}
+
+// RecentEvents returns the most recent n cost events.
+func (t *Tracker) RecentEvents(n int) []CostEvent {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+
+	if len(t.events) <= n {
+		result := make([]CostEvent, len(t.events))
+		copy(result, t.events)
+		return result
+	}
+	result := make([]CostEvent, n)
+	copy(result, t.events[len(t.events)-n:])
+	return result
+}
+
 // SetPricing adds or updates pricing for a model.
 func (t *Tracker) SetPricing(pricing ModelPricing) {
 	t.mu.Lock()

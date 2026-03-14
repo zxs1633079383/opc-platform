@@ -10,6 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/zlc-ai/opc-platform/internal/config"
+	"github.com/zlc-ai/opc-platform/pkg/cost"
 	"github.com/zlc-ai/opc-platform/pkg/gateway"
 	"github.com/zlc-ai/opc-platform/pkg/server"
 )
@@ -64,6 +65,10 @@ func runServe(cmd *cobra.Command, args []string) error {
 	}
 	defer os.Remove(addrPath)
 
+	// Create cost tracker.
+	costDir := filepath.Join(config.GetConfigDir(), "costs")
+	costMgr := cost.NewTracker(costDir, logger)
+
 	// Create gateway (no channels configured by default).
 	gw := gateway.New(logger)
 
@@ -76,7 +81,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// ctrl.StartCheckpointLoop(ctx, 5*time.Minute)
 
 	// Start HTTP server.
-	srv := server.New(ctrl, nil, gw, server.Config{
+	srv := server.New(ctrl, costMgr, gw, server.Config{
 		Port: servePort,
 		Host: serveHost,
 	}, logger)
