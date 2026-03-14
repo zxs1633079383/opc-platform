@@ -32,6 +32,7 @@ const (
 	AgentTypeClaudeCode AgentType = "claude-code"
 	AgentTypeCodex      AgentType = "codex"
 	AgentTypeCursor     AgentType = "cursor"
+	AgentTypeOpenAI     AgentType = "openai"
 	AgentTypeCustom     AgentType = "custom"
 )
 
