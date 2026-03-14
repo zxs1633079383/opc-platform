@@ -18,7 +18,7 @@ spec:
     timeout:
       task: 900s
   context:
-    workdir: /workspace/code
+    workdir: /tmp/opc/code
     skills:
       - full-stack-development
       - testing
@@ -45,7 +45,7 @@ spec:
     timeout:
       task: 300s
   context:
-    workdir: /workspace/scripts
+    workdir: /tmp/opc/scripts
     skills:
       - bash-scripting
       - python
@@ -69,7 +69,7 @@ spec:
     timeout:
       task: 600s
   context:
-    workdir: /workspace/docs
+    workdir: /tmp/opc/docs
     skills:
       - technical-writing
       - documentation

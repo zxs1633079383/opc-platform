@@ -16,7 +16,7 @@ spec:
     timeout:
       task: 120s
   context:
-    workdir: /workspace/automation
+    workdir: /tmp/opc/automation
     skills:
       - git-operations
       - file-management
@@ -38,7 +38,7 @@ spec:
     timeout:
       task: 60s
   context:
-    workdir: /workspace/monitoring
+    workdir: /tmp/opc/monitoring
     skills:
       - health-check
       - alerting
@@ -63,7 +63,7 @@ spec:
     timeout:
       task: 300s
   context:
-    workdir: /workspace/deploy
+    workdir: /tmp/opc/deploy
     skills:
       - docker
       - kubernetes

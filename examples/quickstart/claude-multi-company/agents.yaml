@@ -17,7 +17,7 @@ spec:
     timeout:
       task: 600s
   context:
-    workdir: /workspace/software
+    workdir: /tmp/opc/software
     skills:
       - coding
       - testing
@@ -40,7 +40,7 @@ spec:
     timeout:
       task: 300s
   context:
-    workdir: /workspace/ops
+    workdir: /tmp/opc/ops
     skills:
       - devops
       - monitoring
@@ -63,7 +63,7 @@ spec:
     timeout:
       task: 300s
   context:
-    workdir: /workspace/sales
+    workdir: /tmp/opc/sales
     skills:
       - documentation
       - copywriting
