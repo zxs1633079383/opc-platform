@@ -1,0 +1,7 @@
+.git
+.github
+*.md
+dashboard/node_modules
+dashboard/.next
+test/
+docs/

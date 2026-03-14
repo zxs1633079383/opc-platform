@@ -1,0 +1,30 @@
+version: "3.9"
+
+services:
+  opc-daemon:
+    build: .
+    container_name: opc-daemon
+    ports:
+      - "9527:9527"
+    volumes:
+      - opc-data:/data/opc
+    environment:
+      - OPC_TELEGRAM_TOKEN=${OPC_TELEGRAM_TOKEN:-}
+      - OPC_DISCORD_TOKEN=${OPC_DISCORD_TOKEN:-}
+    restart: unless-stopped
+
+  dashboard:
+    build:
+      context: ./dashboard
+      dockerfile: Dockerfile
+    container_name: opc-dashboard
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://opc-daemon:9527/api
+    depends_on:
+      - opc-daemon
+    restart: unless-stopped
+
+volumes:
+  opc-data:
