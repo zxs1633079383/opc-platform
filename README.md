@@ -3,6 +3,7 @@
 **AI Agent 的 Kubernetes** — 让一个人能像管理容器集群一样管理 AI Agent 集群。
 
 [![Go](https://img.shields.io/badge/Go-1.22+-00ADD8?logo=go)](https://go.dev)
+[![Status](https://img.shields.io/badge/Status-Alpha-orange)]
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 ---
@@ -139,6 +140,52 @@ opctl status
 
 详细指南请参考 [QUICKSTART.md](QUICKSTART.md)。
 
+## 🎬 Real Demo (验证通过)
+
+以下是一个**真实可用**的端到端测试，已于 2024-03-14 验证通过：
+
+```bash
+# 1. 启动 daemon（持久化 Agent 状态）
+opctl serve &
+
+# 2. 创建 Claude Code Agent
+cat <<EOF | opctl apply -f -
+apiVersion: opc/v1
+kind: AgentSpec
+metadata:
+  name: coder
+spec:
+  type: claude-code
+  runtime:
+    inference:
+      thinking: low
+      maxTokens: 8192
+  context:
+    workdir: /tmp
+EOF
+
+# 3. 启动 Agent
+opctl restart agent coder
+
+# 4. 执行任务
+curl -X POST http://127.0.0.1:9527/api/run \
+  -H "Content-Type: application/json" \
+  -d '{"agent":"coder","message":"Reply only: Hello from OPC Platform"}'
+```
+
+**实际输出**：
+```json
+{
+  "output": "Hello from OPC Platform",
+  "taskId": "task-1773477106914",
+  "tokensIn": 3,
+  "tokensOut": 8
+}
+```
+
+> 💡 **注意**：需要先安装并配置好 Claude Code CLI (`claude --version`)
+
+
 ## Documentation
 
 | 文档 | 描述 |
@@ -211,3 +258,40 @@ MIT License - see [LICENSE](LICENSE) for details.
 ---
 
 **OPC Platform** — One person, infinite agents.
+
+## 🗺️ Roadmap
+
+OPC Platform 正在积极开发中，欢迎 Star ⭐ 关注！
+
+### v0.1 (当前) - Alpha
+- [x] CLI 框架 (`opctl`)
+- [x] 多 Agent 适配器 (Claude Code, OpenClaw, Codex)
+- [x] Daemon 模式
+- [x] 工作流引擎
+- [x] 成本追踪
+- [x] 审计日志
+
+### v0.2 - Beta
+- [ ] Web Dashboard
+- [ ] Telegram/Discord Gateway
+- [ ] 分布式部署支持
+- [ ] 更多 Agent 类型 (GPT-4o, Gemini)
+
+### v0.3 - Production Ready
+- [ ] 企业级安全
+- [ ] 多租户支持
+- [ ] Kubernetes Operator
+
+---
+
+## Contributing
+
+欢迎提交 Issue 和 PR！这是一个早期项目，我们非常期待社区的反馈。
+
+## License
+
+MIT License - 详见 [LICENSE](LICENSE)
+
+---
+
+**One person, infinite agents.** 🚀

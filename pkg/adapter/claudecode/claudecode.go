@@ -145,14 +145,12 @@ func (a *Adapter) Execute(ctx context.Context, task v1.TaskRecord) (adapter.Exec
 	args := []string{"--print"}
 	args = append(args, a.buildBaseArgs()...)
 	args = append(args, "--output-format", "json")
-
-	if a.spec.Spec.Context.Workdir != "" {
-		args = append(args, "--cwd", a.spec.Spec.Context.Workdir)
-	}
-
 	args = append(args, "-p", task.Message)
 
 	cmd := exec.CommandContext(ctx, "claude", args...)
+	if a.spec.Spec.Context.Workdir != "" {
+		cmd.Dir = a.spec.Spec.Context.Workdir
+	}
 
 	a.mu.Lock()
 	a.activeCmd = cmd
@@ -218,13 +216,12 @@ func (a *Adapter) Stream(ctx context.Context, task v1.TaskRecord) (<-chan adapte
 	args := []string{"--output-format", "stream-json"}
 	args = append(args, a.buildBaseArgs()...)
 
-	if a.spec.Spec.Context.Workdir != "" {
-		args = append(args, "--cwd", a.spec.Spec.Context.Workdir)
-	}
-
 	args = append(args, "-p", task.Message)
 
 	cmd := exec.CommandContext(ctx, "claude", args...)
+	if a.spec.Spec.Context.Workdir != "" {
+		cmd.Dir = a.spec.Spec.Context.Workdir
+	}
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
