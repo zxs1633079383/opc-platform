@@ -16,7 +16,7 @@ import (
 // Server provides HTTP API and WebSocket endpoints for the dashboard.
 type Server struct {
 	controller *controller.Controller
-	costMgr    *cost.Manager
+	costMgr    *cost.Tracker
 	gateway    *gateway.Gateway
 	logger     *zap.SugaredLogger
 	httpServer *http.Server
@@ -34,7 +34,7 @@ type Config struct {
 // New creates a new API server.
 func New(
 	ctrl *controller.Controller,
-	costMgr *cost.Manager,
+	costMgr *cost.Tracker,
 	gw *gateway.Gateway,
 	config Config,
 	logger *zap.SugaredLogger,
@@ -246,7 +246,7 @@ func (s *Server) restartAgent(c *gin.Context) {
 
 func (s *Server) listTasks(c *gin.Context) {
 	ctx := c.Request.Context()
-	tasks, err := s.controller.ListTasks(ctx)
+	tasks, err := s.controller.Store().ListTasks(ctx)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -258,7 +258,7 @@ func (s *Server) getTask(c *gin.Context) {
 	id := c.Param("id")
 	ctx := c.Request.Context()
 
-	task, err := s.controller.GetTask(ctx, id)
+	task, err := s.controller.Store().GetTask(ctx, id)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "task not found"})
 		return
@@ -270,19 +270,19 @@ func (s *Server) getTaskLogs(c *gin.Context) {
 	id := c.Param("id")
 	ctx := c.Request.Context()
 
-	logs, err := s.controller.GetTaskLogs(ctx, id)
+	task, err := s.controller.Store().GetTask(ctx, id)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "task not found"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"logs": logs})
+	c.JSON(http.StatusOK, gin.H{"logs": task.Result})
 }
 
 func (s *Server) getMetrics(c *gin.Context) {
 	ctx := c.Request.Context()
 
 	agents, _ := s.controller.ListAgents(ctx)
-	tasks, _ := s.controller.ListTasks(ctx)
+	tasks, _ := s.controller.Store().ListTasks(ctx)
 	agentMetrics := s.controller.AgentMetrics()
 
 	runningAgents := 0
