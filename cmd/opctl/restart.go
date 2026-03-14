@@ -26,6 +26,15 @@ func init() {
 func runRestartAgent(cmd *cobra.Command, args []string) error {
 	name := args[0]
 
+	if c := getDaemonClient(); c != nil {
+		fmt.Printf("Restarting agent/%s...\n", name)
+		if err := c.RestartAgent(cmd.Context(), name); err != nil {
+			return err
+		}
+		fmt.Printf("agent/%s restarted\n", name)
+		return nil
+	}
+
 	ctrl, cleanup, err := getController()
 	if err != nil {
 		return err

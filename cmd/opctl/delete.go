@@ -26,6 +26,14 @@ func init() {
 func runDeleteAgent(cmd *cobra.Command, args []string) error {
 	name := args[0]
 
+	if c := getDaemonClient(); c != nil {
+		if err := c.DeleteAgent(cmd.Context(), name); err != nil {
+			return err
+		}
+		fmt.Printf("agent/%s deleted\n", name)
+		return nil
+	}
+
 	ctrl, cleanup, err := getController()
 	if err != nil {
 		return err

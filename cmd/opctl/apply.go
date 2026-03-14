@@ -32,7 +32,17 @@ func runApply(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("read file %q: %w", applyFile, err)
 	}
 
-	// Parse kind to determine resource type.
+	// If daemon is running, send YAML to daemon.
+	if c := getDaemonClient(); c != nil {
+		msg, err := c.Apply(cmd.Context(), data)
+		if err != nil {
+			return err
+		}
+		fmt.Println(msg)
+		return nil
+	}
+
+	// Local mode.
 	var res v1.Resource
 	if err := yaml.Unmarshal(data, &res); err != nil {
 		return fmt.Errorf("parse YAML: %w", err)
@@ -98,7 +108,6 @@ func applyWorkflow(data []byte) error {
 		Enabled:  true,
 	}
 
-	// Try update first, then create.
 	existing, getErr := ctrl.Store().GetWorkflow(context.Background(), spec.Metadata.Name)
 	if getErr == nil {
 		existing.SpecYAML = string(data)

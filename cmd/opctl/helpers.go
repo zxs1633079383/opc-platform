@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/zlc-ai/opc-platform/internal/config"
 	"github.com/zlc-ai/opc-platform/pkg/adapter"
@@ -10,13 +12,14 @@ import (
 	"github.com/zlc-ai/opc-platform/pkg/adapter/codex"
 	"github.com/zlc-ai/opc-platform/pkg/adapter/custom"
 	"github.com/zlc-ai/opc-platform/pkg/adapter/openclaw"
+	"github.com/zlc-ai/opc-platform/pkg/client"
 	"github.com/zlc-ai/opc-platform/pkg/controller"
 	"github.com/zlc-ai/opc-platform/pkg/storage/sqlite"
 
 	v1 "github.com/zlc-ai/opc-platform/api/v1"
 )
 
-// getController creates a Controller with storage and adapter registry.
+// getController creates a local Controller with storage and adapter registry.
 // Returns the controller, a cleanup function, and any error.
 func getController() (*controller.Controller, func(), error) {
 	if err := config.EnsureConfigDir(); err != nil {
@@ -56,6 +59,40 @@ func getController() (*controller.Controller, func(), error) {
 	}
 
 	return ctrl, cleanup, nil
+}
+
+// getDaemonClient returns an HTTP client connected to the running daemon,
+// or nil if no daemon is detected.
+func getDaemonClient() *client.Client {
+	addr := getDaemonAddr()
+	if addr == "" {
+		return nil
+	}
+	c := client.New(addr)
+	if err := c.Ping(); err != nil {
+		return nil
+	}
+	return c
+}
+
+// getDaemonAddr reads the daemon address from the addr file.
+// Returns empty string if no daemon is running.
+func getDaemonAddr() string {
+	addrPath := filepath.Join(config.GetConfigDir(), "daemon.addr")
+	data, err := os.ReadFile(addrPath)
+	if err != nil {
+		return ""
+	}
+	addr := strings.TrimSpace(string(data))
+	if addr == "" {
+		return ""
+	}
+	return addr
+}
+
+// isDaemonRunning checks if the daemon is reachable.
+func isDaemonRunning() bool {
+	return getDaemonClient() != nil
 }
 
 // cmdContext returns the command's context, or a background context.

@@ -6,6 +6,7 @@ import (
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
+	v1 "github.com/zlc-ai/opc-platform/api/v1"
 )
 
 var statusCmd = &cobra.Command{
@@ -19,20 +20,33 @@ func init() {
 }
 
 func runStatus(cmd *cobra.Command, args []string) error {
-	ctrl, cleanup, err := getController()
-	if err != nil {
-		return err
-	}
-	defer cleanup()
+	var agents []v1.AgentRecord
+	var tasks []v1.TaskRecord
 
-	agents, err := ctrl.ListAgents(cmd.Context())
-	if err != nil {
-		return err
-	}
-
-	tasks, err := ctrl.Store().ListTasks(cmd.Context())
-	if err != nil {
-		return err
+	if c := getDaemonClient(); c != nil {
+		var err error
+		agents, err = c.ListAgents(cmd.Context())
+		if err != nil {
+			return err
+		}
+		tasks, err = c.ListTasks(cmd.Context())
+		if err != nil {
+			return err
+		}
+	} else {
+		ctrl, cleanup, err := getController()
+		if err != nil {
+			return err
+		}
+		defer cleanup()
+		agents, err = ctrl.ListAgents(cmd.Context())
+		if err != nil {
+			return err
+		}
+		tasks, err = ctrl.Store().ListTasks(cmd.Context())
+		if err != nil {
+			return err
+		}
 	}
 
 	// Summary.

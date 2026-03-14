@@ -58,13 +58,26 @@ func runRunTask(cmd *cobra.Command, args []string) error {
 
 	message := strings.Join(args, " ")
 
+	// If daemon is running, use it.
+	if c := getDaemonClient(); c != nil {
+		taskID, output, err := c.RunTask(cmd.Context(), runAgentName, message)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("task/%s created (agent: %s)\n", taskID, runAgentName)
+		if output != "" {
+			fmt.Println(output)
+		}
+		return nil
+	}
+
+	// Local mode.
 	ctrl, cleanup, err := getController()
 	if err != nil {
 		return err
 	}
 	defer cleanup()
 
-	// Create task record.
 	taskID := generateTaskID()
 	task := v1.TaskRecord{
 		ID:        taskID,

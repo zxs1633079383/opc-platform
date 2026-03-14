@@ -10,6 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 	v1 "github.com/zlc-ai/opc-platform/api/v1"
+	"github.com/zlc-ai/opc-platform/pkg/controller"
 )
 
 var getCmd = &cobra.Command{
@@ -47,13 +48,21 @@ func init() {
 }
 
 func runGetAgents(cmd *cobra.Command, args []string) error {
-	ctrl, cleanup, err := getController()
-	if err != nil {
-		return err
-	}
-	defer cleanup()
+	var agents []v1.AgentRecord
+	var err error
 
-	agents, err := ctrl.ListAgents(cmd.Context())
+	if c := getDaemonClient(); c != nil {
+		agents, err = c.ListAgents(cmd.Context())
+	} else {
+		var ctrl *controller.Controller
+		var cleanup func()
+		ctrl, cleanup, err = getController()
+		if err != nil {
+			return err
+		}
+		defer cleanup()
+		agents, err = ctrl.ListAgents(cmd.Context())
+	}
 	if err != nil {
 		return err
 	}
@@ -73,13 +82,21 @@ func runGetAgents(cmd *cobra.Command, args []string) error {
 }
 
 func runGetTasks(cmd *cobra.Command, args []string) error {
-	ctrl, cleanup, err := getController()
-	if err != nil {
-		return err
-	}
-	defer cleanup()
+	var tasks []v1.TaskRecord
+	var err error
 
-	tasks, err := ctrl.Store().ListTasks(cmd.Context())
+	if c := getDaemonClient(); c != nil {
+		tasks, err = c.ListTasks(cmd.Context())
+	} else {
+		var ctrl *controller.Controller
+		var cleanup func()
+		ctrl, cleanup, err = getController()
+		if err != nil {
+			return err
+		}
+		defer cleanup()
+		tasks, err = ctrl.Store().ListTasks(cmd.Context())
+	}
 	if err != nil {
 		return err
 	}
@@ -141,13 +158,21 @@ func formatAge(d time.Duration) string {
 }
 
 func runGetWorkflows(cmd *cobra.Command, args []string) error {
-	ctrl, cleanup, err := getController()
-	if err != nil {
-		return err
-	}
-	defer cleanup()
+	var workflows []v1.WorkflowRecord
+	var err error
 
-	workflows, err := ctrl.Store().ListWorkflows(cmd.Context())
+	if c := getDaemonClient(); c != nil {
+		workflows, err = c.ListWorkflows(cmd.Context())
+	} else {
+		var ctrl *controller.Controller
+		var cleanup func()
+		ctrl, cleanup, err = getController()
+		if err != nil {
+			return err
+		}
+		defer cleanup()
+		workflows, err = ctrl.Store().ListWorkflows(cmd.Context())
+	}
 	if err != nil {
 		return err
 	}
