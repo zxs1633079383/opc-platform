@@ -12,6 +12,8 @@ import (
 	"github.com/zlc-ai/opc-platform/internal/config"
 	"github.com/zlc-ai/opc-platform/pkg/cost"
 	"github.com/zlc-ai/opc-platform/pkg/gateway"
+	tgchannel "github.com/zlc-ai/opc-platform/pkg/gateway/telegram"
+	dcchannel "github.com/zlc-ai/opc-platform/pkg/gateway/discord"
 	"github.com/zlc-ai/opc-platform/pkg/server"
 )
 
@@ -69,13 +71,50 @@ func runServe(cmd *cobra.Command, args []string) error {
 	costDir := filepath.Join(config.GetConfigDir(), "costs")
 	costMgr := cost.NewTracker(costDir, logger)
 
-	// Create gateway (no channels configured by default).
+	// Create gateway with command handler.
 	gw := gateway.New(logger)
+	cmdHandler := gateway.NewCommandHandler(ctrl, logger)
+	gw.SetHandler(cmdHandler.Handle)
+
+	// Register Telegram channel if token is set.
+	if token := os.Getenv("OPC_TELEGRAM_TOKEN"); token != "" {
+		tg, err := tgchannel.New(&gateway.TelegramConfig{
+			Token:         token,
+			CommandPrefix: "/",
+		}, logger)
+		if err != nil {
+			logger.Warnw("failed to create telegram channel", "error", err)
+		} else {
+			if err := gw.RegisterChannel(tg); err != nil {
+				logger.Warnw("failed to register telegram channel", "error", err)
+			}
+		}
+	}
+
+	// Register Discord channel if token is set.
+	if token := os.Getenv("OPC_DISCORD_TOKEN"); token != "" {
+		dc, err := dcchannel.New(&gateway.DiscordConfig{
+			Token:         token,
+			CommandPrefix: "!opc ",
+		}, logger)
+		if err != nil {
+			logger.Warnw("failed to create discord channel", "error", err)
+		} else {
+			if err := gw.RegisterChannel(dc); err != nil {
+				logger.Warnw("failed to register discord channel", "error", err)
+			}
+		}
+	}
 
 	// Start health check loop.
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	ctrl.StartHealthCheckLoop(ctx)
+
+	// Start gateway channels.
+	if err := gw.Start(ctx); err != nil {
+		logger.Warnw("failed to start gateway", "error", err)
+	}
 
 	// Start checkpoint loop (every 5 minutes).
 	// ctrl.StartCheckpointLoop(ctx, 5*time.Minute)
@@ -100,6 +139,10 @@ func runServe(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("\nReceived %s, shutting down...\n", sig)
 	cancel()
+
+	if err := gw.Stop(context.Background()); err != nil {
+		logger.Warnw("error stopping gateway", "error", err)
+	}
 
 	if err := srv.Stop(context.Background()); err != nil {
 		logger.Warnw("error stopping server", "error", err)
