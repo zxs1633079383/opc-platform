@@ -1,6 +1,6 @@
 # OPC Platform
 
-**Kubernetes for AI Agents** — Manage AI agent clusters like container orchestration.
+**AI Agent 的 Kubernetes** — 让一个人能像管理容器集群一样管理 AI Agent 集群。
 
 [![Go](https://img.shields.io/badge/Go-1.22+-00ADD8?logo=go)](https://go.dev)
 [![Status](https://img.shields.io/badge/Status-v0.3_Production-green)]()
@@ -11,33 +11,33 @@
 
 ---
 
-## What is OPC Platform?
+## OPC Platform 是什么？
 
-OPC Platform is a **standalone** AI Agent orchestration platform. Just like Kubernetes manages containers, OPC Platform lets you manage multiple AI Agents with declarative YAML configs, enabling automated workflows, cost control, and intelligent scheduling.
+OPC Platform 是一个**独立运行**的 AI Agent 编排平台。就像 Kubernetes 管理容器一样，OPC Platform 让你用声明式 YAML 配置来管理多种 AI Agent，实现自动化工作流、成本控制和智能调度。
 
-**⚠️ Important: OPC Platform does NOT depend on Kubernetes! It IS the orchestration system for AI Agents.**
+**⚠️ 重要：OPC Platform 不依赖 Kubernetes！它本身就是 AI Agent 的编排系统。**
 
-| K8s Concept | OPC Equivalent |
-|-------------|----------------|
-| Docker Container | AI Agent (Claude Code / OpenAI / Codex / Custom) |
-| Kubernetes | **OPC Platform (Standalone)** |
+| K8s 概念 | OPC 对应 |
+|----------|----------|
+| Docker 容器 | AI Agent（Claude Code / OpenAI / Codex / 自定义） |
+| Kubernetes | **OPC Platform（独立运行）** |
 | Pod | Agent Instance |
 | Deployment | AgentSpec |
 | kubectl | `opctl` |
-| Node | OPC Node (Cluster Node) |
+| Node | OPC Node（集群节点） |
 
 ---
 
-## 🎬 Real Demo (Verified)
+## 🎬 真实演示（已验证）
 
 ```bash
-# 1. Build
+# 1. 编译
 go build -o opctl ./cmd/opctl/
 
-# 2. Start daemon
+# 2. 启动 daemon
 ./opctl serve &
 
-# 3. Create Agent
+# 3. 创建 Agent
 cat << 'AGENT' | ./opctl apply -f -
 apiVersion: opc/v1
 kind: AgentSpec
@@ -49,64 +49,64 @@ spec:
     workdir: /tmp
 AGENT
 
-# 4. Start and run task
+# 4. 启动并执行任务
 ./opctl restart agent coder
 curl -X POST http://127.0.0.1:9527/api/run \
   -H "Content-Type: application/json" \
   -d '{"agent":"coder","message":"Reply only: Hello from OPC"}'
 ```
 
-**Actual Output:**
+**实际输出：**
 ```json
 {"output":"Hello from OPC","taskId":"task-xxx","tokensIn":3,"tokensOut":6}
 ```
 
 ---
 
-## Features
+## 功能特性
 
-### 🤖 Agent Management
-- **Multi-type Support** — Claude Code, OpenAI GPT-4o, Codex, OpenClaw, Custom
-- **Declarative Config** — Define desired state in YAML, platform implements it
-- **Lifecycle Management** — Start, stop, restart, scale
-- **Health Checks** — Auto-detect failures, trigger self-healing
+### 🤖 Agent 管理
+- **多类型支持** — Claude Code、OpenAI GPT-4o、Codex、OpenClaw、自定义
+- **声明式配置** — YAML 定义期望状态，平台自动实现
+- **生命周期管理** — 启动、停止、重启、扩缩容
+- **健康检查** — 自动检测故障，触发自愈
 
-### 🔄 Workflow Engine
-- **DAG Workflows** — Multi-step directed acyclic graph orchestration
-- **Parallel Execution** — Independent steps run concurrently
-- **Context Passing** — Variable substitution between steps
-- **Cron Scheduling** — Timed execution support
+### 🔄 工作流引擎
+- **DAG 工作流** — 多步骤有向无环图编排
+- **并行执行** — 无依赖的步骤自动并行
+- **上下文传递** — 步骤间变量替换
+- **Cron 调度** — 支持定时执行
 
-### 🌐 Gateway
-- **Telegram Bot** — /run, /status, /agents commands
-- **Discord Bot** — Slash Commands support
-- **Web Dashboard** — Next.js management UI
+### 🌐 网关
+- **Telegram Bot** — /run, /status, /agents 命令
+- **Discord Bot** — Slash Commands 支持
+- **Web Dashboard** — Next.js 管理界面
 
-### 💰 Cost Control
-- **Token Metering** — Precise tracking per task
-- **Budget Management** — Daily/monthly limits
-- **Cost Reports** — Analysis by Agent/Project
+### 💰 成本控制
+- **Token 计量** — 精确追踪每次任务用量
+- **预算管理** — 设置每日/每月限额
+- **成本报告** — 按 Agent/Project 维度分析
 
-### 🔐 Security (v0.3)
-- **JWT Authentication** — Token generation and validation
-- **RBAC Authorization** — admin/operator/viewer roles
-- **Multi-tenancy** — Tenant-level resource isolation
+### 🔐 安全 (v0.3)
+- **JWT 认证** — Token 生成和验证
+- **RBAC 权限** — admin/operator/viewer 角色
+- **多租户** — 租户级别资源隔离
 
-### 🌍 OPC Cluster (Standalone, No K8s Required)
-- **Cluster Management** — init/join/leave
-- **Node Discovery** — Auto-discover cluster nodes
-- **Cross-node Scheduling** — Smart agent distribution
+### 🌍 OPC 集群（独立运行，无需 K8s）
+- **集群管理** — init/join/leave
+- **节点发现** — 自动发现集群节点
+- **跨节点调度** — Agent 智能分配
 
 ---
 
-## Quick Start
+## 快速开始
 
-### Prerequisites
+### 环境要求
 
 - Go 1.22+
-- Claude Code CLI (optional, for claude-code type agents)
+- Claude Code CLI（可选，用于 claude-code 类型 Agent）
 
-### Install
+### 安装
 
 ```bash
 git clone https://github.com/zxs1633079383/opc-platform.git
@@ -115,79 +115,79 @@ go build -o opctl ./cmd/opctl/
 sudo mv opctl /usr/local/bin/
 ```
 
-### 30-Second Start
+### 30 秒上手
 
 ```bash
-# 1. Start daemon
+# 1. 启动 daemon
 opctl serve &
 
-# 2. Check status
+# 2. 查看状态
 opctl status
 
-# 3. Create Agent
+# 3. 创建 Agent
 opctl apply -f examples/agent-claude-code.yaml
 
-# 4. Run task
+# 4. 执行任务
 opctl run --agent coder "Write hello world in Go"
 
-# 5. View tasks
+# 5. 查看任务
 opctl get tasks
 ```
 
-### Cluster Deployment
+### 集群部署
 
 ```bash
-# Node 1 (Master)
+# 节点 1 (Master)
 opctl cluster init --advertise-addr 192.168.1.1
 
-# Node 2, 3... (Worker)
+# 节点 2, 3... (Worker)
 opctl cluster join --master 192.168.1.1:9527
 
-# View cluster
+# 查看集群
 opctl cluster nodes
 opctl cluster status
 ```
 
 ---
 
-## CLI Commands
+## CLI 命令
 
 ```bash
-# Agent Management
-opctl apply -f agent.yaml     # Create/Update
-opctl get agents              # List
-opctl describe agent <name>   # Details
-opctl delete agent <name>     # Delete
-opctl restart agent <name>    # Restart
+# Agent 管理
+opctl apply -f agent.yaml     # 创建/更新
+opctl get agents              # 列表
+opctl describe agent <name>   # 详情
+opctl delete agent <name>     # 删除
+opctl restart agent <name>    # 重启
 
-# Task Execution
+# 任务执行
 opctl run --agent <name> "message"
 opctl get tasks
 opctl logs <task-id>
 
-# Cluster Management
-opctl cluster init            # Initialize master
-opctl cluster join <addr>     # Join cluster
-opctl cluster nodes           # List nodes
-opctl cluster status          # Cluster status
-opctl cluster leave           # Leave cluster
+# 集群管理
+opctl cluster init            # 初始化 master
+opctl cluster join <addr>     # 加入集群
+opctl cluster nodes           # 节点列表
+opctl cluster status          # 集群状态
+opctl cluster leave           # 离开集群
 
-# Workflow
+# 工作流
 opctl run workflow <name>
 opctl get workflows
 
-# Cost
+# 成本
 opctl cost report
 opctl cost watch
 ```
 
 ---
 
-## Architecture
+## 架构
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                      User Layer                          │
+│                      用户层                              │
 │  ┌──────┐  ┌──────┐  ┌──────┐  ┌──────┐  ┌──────┐      │
 │  │ CLI  │  │ API  │  │Telegr│  │Discor│  │ Web  │      │
 │  │opctl │  │      │  │  am  │  │  d   │  │  UI  │      │
@@ -195,7 +195,7 @@ opctl cost watch
 └─────────────────────────┬───────────────────────────────┘
                           │
 ┌─────────────────────────▼───────────────────────────────┐
-│                   OPC Control Plane                      │
+│                   OPC 控制平面                           │
 │  ┌────────────┐  ┌────────────┐  ┌────────────┐         │
 │  │  Cluster   │  │  Workflow  │  │ Controller │         │
 │  │   Manager  │  │   Engine   │  │ Lifecycle  │         │
@@ -207,7 +207,7 @@ opctl cost watch
 └─────────────────────────┬───────────────────────────────┘
                           │
 ┌─────────────────────────▼───────────────────────────────┐
-│                    Agent Runtime                         │
+│                    Agent 运行时                          │
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐ │
 │  │ Claude   │  │  OpenAI  │  │  Codex   │  │  Custom  │ │
 │  │   Code   │  │  GPT-4o  │  │          │  │  Agent   │ │
@@ -217,7 +217,7 @@ opctl cost watch
 
 ---
 
-## Deployment
+## 部署方式
 
 ### Docker
 
@@ -235,54 +235,54 @@ sudo systemctl start opc
 
 ---
 
-## Testing
+## 测试
 
 ```bash
-# Unit tests
+# 单元测试
 go test ./...
 
-# E2E tests (v0.1 + v0.2 + v0.3)
+# E2E 测试 (v0.1 + v0.2 + v0.3)
 ./tests/e2e_test.sh
 ```
 
-**Test Results: 15/15 Passing** ✅
+**测试结果：15/15 通过** ✅
 
 ---
 
-## 🗺️ Roadmap
+## 🗺️ 路线图
 
 ### v0.1 Alpha ✅
-- [x] CLI framework (`opctl`)
-- [x] Agent adapters
-- [x] Workflow engine
-- [x] Daemon mode
+- [x] CLI 框架 (`opctl`)
+- [x] Agent 适配器
+- [x] 工作流引擎
+- [x] Daemon 模式
 
 ### v0.2 Beta ✅
 - [x] Web Dashboard
 - [x] Telegram/Discord Gateway
 - [x] OpenAI GPT-4o Adapter
-- [x] PostgreSQL support
-- [x] Docker deployment
+- [x] PostgreSQL 支持
+- [x] Docker 部署
 
 ### v0.3 Production ✅
-- [x] JWT authentication
-- [x] RBAC authorization
-- [x] Multi-tenant support
-- [x] **OPC native cluster management** (no K8s dependency)
+- [x] JWT 认证
+- [x] RBAC 权限
+- [x] 多租户支持
+- [x] **OPC 原生集群管理**（无 K8s 依赖）
 
-### v0.4 (Planned)
-- [ ] Web UI improvements
-- [ ] More agent types (Gemini, Cursor)
-- [ ] Agent marketplace
-- [ ] Plugin system
+### v0.4 (规划中)
+- [ ] Web UI 完善
+- [ ] 更多 Agent 类型 (Gemini, Cursor)
+- [ ] Agent 市场
+- [ ] 插件系统
 
 ---
 
-## Contributing
+## 贡献
 
-Issues and PRs welcome!
+欢迎提交 Issue 和 PR！
 
-## License
+## 许可证
 
 MIT License
 
