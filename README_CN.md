@@ -3,7 +3,7 @@
 **AI Agent 的 Kubernetes** — 让一个人能像管理容器集群一样管理 AI Agent 集群。
 
 [![Go](https://img.shields.io/badge/Go-1.22+-00ADD8?logo=go)](https://go.dev)
-[![Status](https://img.shields.io/badge/Status-v0.3_Production-green)]()
+[![Status](https://img.shields.io/badge/Status-v0.4_Federation-green)]()
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Tests](https://img.shields.io/badge/Tests-15%2F15_Passing-brightgreen)]()
 
@@ -97,6 +97,14 @@ curl -X POST http://127.0.0.1:9527/api/run \
 - **节点发现** — 自动发现集群节点
 - **跨节点调度** — Agent 智能分配
 
+### 🏢 联邦管理 (v0.4)
+- **多公司联邦架构** — 将独立公司注册到联邦网络中协同工作
+- **目标层级系统** — 战略目标分解为 Project > Task > Issue
+- **跨公司调度** — 通过 HTTP 传输将目标分发到各公司
+- **心跳监控** — 自动检测联邦中所有公司的健康状态
+- **人工介入** — 审批门控机制，关键决策需人工确认
+- **[联邦管理指南](docs/federation.md)** — 完整文档
+
 ---
 
 ## 快速开始
@@ -179,6 +187,19 @@ opctl get workflows
 # 成本
 opctl cost report
 opctl cost watch
+
+# 联邦管理 (v0.4)
+opctl federation init              # 初始化联邦
+opctl federation add-company       # 注册公司
+opctl federation companies         # 公司列表
+opctl federation status            # 联邦健康状态
+
+# 目标管理 (v0.4)
+opctl goal create                  # 创建战略目标
+opctl goal list                    # 目标列表
+opctl goal status <goal-id>        # 目标层级树
+opctl goal trace <goal-id>         # 审计追踪
+opctl goal intervene               # 人工介入
 ```
 
 ---
@@ -270,7 +291,15 @@ go test ./...
 - [x] 多租户支持
 - [x] **OPC 原生集群管理**（无 K8s 依赖）
 
-### v0.4 (规划中)
+### v0.4 联邦管理 ✅
+- [x] 多公司联邦架构
+- [x] 目标层级系统（Goal > Project > Task > Issue）
+- [x] 跨公司目标调度
+- [x] 心跳监控
+- [x] 人工介入机制
+- [x] 审批门控
+
+### v0.5 (规划中)
 - [ ] Web UI 完善
 - [ ] 更多 Agent 类型 (Gemini, Cursor)
 - [ ] Agent 市场

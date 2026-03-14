@@ -3,7 +3,7 @@
 **Kubernetes for AI Agents** — Manage AI agent clusters like container orchestration.
 
 [![Go](https://img.shields.io/badge/Go-1.22+-00ADD8?logo=go)](https://go.dev)
-[![Status](https://img.shields.io/badge/Status-v0.3_Production-green)]()
+[![Status](https://img.shields.io/badge/Status-v0.4_Federation-green)]()
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Tests](https://img.shields.io/badge/Tests-15%2F15_Passing-brightgreen)]()
 
@@ -97,6 +97,14 @@ curl -X POST http://127.0.0.1:9527/api/run \
 - **Node Discovery** — Auto-discover cluster nodes
 - **Cross-node Scheduling** — Smart agent distribution
 
+### 🏢 Federation (v0.4)
+- **Multi-Company Architecture** — Register independent companies into a federated network
+- **Goal Hierarchy** — Strategic goals decomposed into Projects > Tasks > Issues
+- **Cross-Company Dispatch** — Distribute goals across companies via HTTP transport
+- **Heartbeat Monitoring** — Automatic health checks for all federated companies
+- **Human-in-the-Loop** — Intervention system with approval gates for critical decisions
+- **[Federation Guide](docs/federation.md)** — Full documentation
+
 ---
 
 ## Quick Start
@@ -179,6 +187,19 @@ opctl get workflows
 # Cost
 opctl cost report
 opctl cost watch
+
+# Federation (v0.4)
+opctl federation init              # Initialize federation
+opctl federation add-company       # Register a company
+opctl federation companies         # List companies
+opctl federation status            # Federation health
+
+# Goal (v0.4)
+opctl goal create                  # Create strategic goal
+opctl goal list                    # List all goals
+opctl goal status <goal-id>        # Goal hierarchy tree
+opctl goal trace <goal-id>         # Audit trail
+opctl goal intervene               # Human intervention
 ```
 
 ---
@@ -270,7 +291,15 @@ go test ./...
 - [x] Multi-tenant support
 - [x] **OPC native cluster management** (no K8s dependency)
 
-### v0.4 (Planned)
+### v0.4 Federation ✅
+- [x] Multi-company federation architecture
+- [x] Goal hierarchy system (Goal > Project > Task > Issue)
+- [x] Cross-company goal dispatch
+- [x] Heartbeat monitoring
+- [x] Human-in-the-loop intervention
+- [x] Approval gates
+
+### v0.5 (Planned)
 - [ ] Web UI improvements
 - [ ] More agent types (Gemini, Cursor)
 - [ ] Agent marketplace
