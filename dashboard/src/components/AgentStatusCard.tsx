@@ -23,7 +23,15 @@ const phaseIndicators: Record<string, string> = {
 }
 
 export function AgentStatusCard({ agent }: AgentStatusCardProps) {
-  const metrics = agent.metrics || {}
+  const metrics: Agent['metrics'] = agent.metrics || {
+    tasksCompleted: 0,
+    tasksFailed: 0,
+    tasksRunning: 0,
+    totalTokensIn: 0,
+    totalTokensOut: 0,
+    totalCost: 0,
+    uptimeSeconds: 0,
+  }
 
   return (
     <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 hover:shadow-md transition-shadow">
