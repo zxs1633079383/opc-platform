@@ -24,6 +24,17 @@ type FederationController struct {
 	stateDir  string
 }
 
+// NewControllerForTest creates a FederationController with a custom state dir
+// and transport. Intended for testing only.
+func NewControllerForTest(stateDir string, transport Transport, logger *zap.SugaredLogger) *FederationController {
+	return &FederationController{
+		companies: make(map[string]*Company),
+		transport: transport,
+		logger:    logger,
+		stateDir:  stateDir,
+	}
+}
+
 // NewController creates a new FederationController.
 func NewController(logger *zap.SugaredLogger) *FederationController {
 	stateDir := filepath.Join(config.GetStateDir(), "federation")
