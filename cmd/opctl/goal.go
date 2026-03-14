@@ -81,7 +81,7 @@ func runGoalCreate(cmd *cobra.Command, args []string) error {
 		CreatedAt:       time.Now().UTC(),
 	}
 
-	dispatcher := goal.NewDispatcher(logger, fc)
+	dispatcher := goal.NewDispatcher(fc, logger)
 	if err := dispatcher.Dispatch(g); err != nil {
 		return fmt.Errorf("dispatch goal: %w", err)
 	}
@@ -103,7 +103,7 @@ func runGoalList(cmd *cobra.Command, args []string) error {
 	logger := ensureLogger()
 
 	fc := federation.NewController(logger)
-	dispatcher := goal.NewDispatcher(logger, fc)
+	dispatcher := goal.NewDispatcher(fc, logger)
 	goals := dispatcher.ListGoals()
 
 	if len(goals) == 0 {
@@ -134,7 +134,7 @@ func runGoalStatus(cmd *cobra.Command, args []string) error {
 	logger := ensureLogger()
 
 	fc := federation.NewController(logger)
-	dispatcher := goal.NewDispatcher(logger, fc)
+	dispatcher := goal.NewDispatcher(fc, logger)
 	g, err := dispatcher.GetGoal(args[0])
 	if err != nil {
 		return err
@@ -175,7 +175,7 @@ func runGoalTrace(cmd *cobra.Command, args []string) error {
 	logger := ensureLogger()
 
 	fc := federation.NewController(logger)
-	dispatcher := goal.NewDispatcher(logger, fc)
+	dispatcher := goal.NewDispatcher(fc, logger)
 	g, err := dispatcher.GetGoal(args[0])
 	if err != nil {
 		return err

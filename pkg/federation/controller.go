@@ -19,7 +19,6 @@ const federationFileName = "federation.json"
 type FederationController struct {
 	mu        sync.RWMutex
 	companies map[string]*Company
-	goals     map[string]*Goal
 	transport Transport
 	logger    *zap.SugaredLogger
 	stateDir  string
@@ -34,7 +33,6 @@ func NewController(logger *zap.SugaredLogger) *FederationController {
 
 	fc := &FederationController{
 		companies: make(map[string]*Company),
-		goals:     make(map[string]*Goal),
 		transport: NewHTTPTransport(logger),
 		logger:    logger,
 		stateDir:  stateDir,

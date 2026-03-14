@@ -6,6 +6,7 @@ import (
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
+	"go.uber.org/zap"
 	"github.com/zlc-ai/opc-platform/internal/config"
 	"github.com/zlc-ai/opc-platform/pkg/federation"
 )
@@ -154,7 +155,7 @@ func runFederationStatus(cmd *cobra.Command, args []string) error {
 
 // --- helper ---
 
-func ensureLogger() *config.SugaredLogger {
+func ensureLogger() *zap.SugaredLogger {
 	logger := config.Logger
 	if logger == nil {
 		config.InitLogger(false)
