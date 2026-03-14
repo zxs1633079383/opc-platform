@@ -1,0 +1,70 @@
+# OpenClaw Agents for Hybrid Setup
+# Used for lightweight automation tasks
+
+apiVersion: opc/v1
+kind: AgentSpec
+metadata:
+  name: software-automator
+  company: software
+  labels:
+    type: secondary
+    role: automation
+spec:
+  type: openclaw
+  replicas: 1
+  runtime:
+    timeout:
+      task: 120s
+  context:
+    workdir: /workspace/automation
+    skills:
+      - git-operations
+      - file-management
+      - api-calls
+
+---
+apiVersion: opc/v1
+kind: AgentSpec
+metadata:
+  name: ops-monitor
+  company: operations
+  labels:
+    type: primary
+    role: monitoring
+spec:
+  type: openclaw
+  replicas: 2
+  runtime:
+    timeout:
+      task: 60s
+  context:
+    workdir: /workspace/monitoring
+    skills:
+      - health-check
+      - alerting
+      - log-analysis
+  healthCheck:
+    type: heartbeat
+    interval: 30s
+
+---
+apiVersion: opc/v1
+kind: AgentSpec
+metadata:
+  name: ops-deployer
+  company: operations
+  labels:
+    type: primary
+    role: deployment
+spec:
+  type: openclaw
+  replicas: 1
+  runtime:
+    timeout:
+      task: 300s
+  context:
+    workdir: /workspace/deploy
+    skills:
+      - docker
+      - kubernetes
+      - ci-cd

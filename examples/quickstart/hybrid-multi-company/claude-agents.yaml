@@ -1,0 +1,76 @@
+# Claude Code Agents for Hybrid Setup
+# Used for complex coding and creative tasks
+
+apiVersion: opc/v1
+kind: AgentSpec
+metadata:
+  name: software-coder
+  company: software
+  labels:
+    type: primary
+    role: developer
+spec:
+  type: claude-code
+  replicas: 2  # Scale for parallel tasks
+  runtime:
+    inference:
+      thinking: medium  # More reasoning for complex code
+    timeout:
+      task: 900s
+  context:
+    workdir: /workspace/code
+    skills:
+      - full-stack-development
+      - testing
+      - code-review
+  recovery:
+    enabled: true
+    maxRestarts: 3
+
+---
+apiVersion: opc/v1
+kind: AgentSpec
+metadata:
+  name: ops-scripter
+  company: operations
+  labels:
+    type: secondary
+    role: automation
+spec:
+  type: claude-code
+  replicas: 1
+  runtime:
+    inference:
+      thinking: low
+    timeout:
+      task: 300s
+  context:
+    workdir: /workspace/scripts
+    skills:
+      - bash-scripting
+      - python
+      - infrastructure
+
+---
+apiVersion: opc/v1
+kind: AgentSpec
+metadata:
+  name: sales-writer
+  company: sales
+  labels:
+    type: primary
+    role: content
+spec:
+  type: claude-code
+  replicas: 1
+  runtime:
+    inference:
+      thinking: low
+    timeout:
+      task: 600s
+  context:
+    workdir: /workspace/docs
+    skills:
+      - technical-writing
+      - documentation
+      - api-docs

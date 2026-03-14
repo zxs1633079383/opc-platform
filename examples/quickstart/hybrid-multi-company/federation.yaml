@@ -1,0 +1,66 @@
+# Hybrid Federation Configuration
+# Companies with mixed agent types
+
+apiVersion: opc/v1
+kind: Federation
+metadata:
+  name: tech-group
+  description: Technology group with software, operations, and sales companies
+spec:
+  # Federation-level settings
+  heartbeatInterval: 60s
+  contextSharing: enabled
+  auditLevel: full
+
+---
+apiVersion: opc/v1
+kind: Company
+metadata:
+  name: software
+  federation: tech-group
+spec:
+  type: software
+  endpoint: http://localhost:9527
+  agentTypes:
+    - claude-code  # Primary: complex coding
+    - openclaw     # Secondary: automation
+  resources:
+    tokenBudget:
+      perDay: 1000000
+    costLimit:
+      perMonth: $500
+
+---
+apiVersion: opc/v1
+kind: Company
+metadata:
+  name: operations
+  federation: tech-group
+spec:
+  type: operations
+  endpoint: http://localhost:9528
+  agentTypes:
+    - openclaw     # Primary: automation/monitoring
+    - claude-code  # Secondary: complex scripts
+  resources:
+    tokenBudget:
+      perDay: 500000
+    costLimit:
+      perMonth: $200
+
+---
+apiVersion: opc/v1
+kind: Company
+metadata:
+  name: sales
+  federation: tech-group
+spec:
+  type: sales
+  endpoint: http://localhost:9529
+  agentTypes:
+    - claude-code  # Primary: documentation/copywriting
+  resources:
+    tokenBudget:
+      perDay: 300000
+    costLimit:
+      perMonth: $150

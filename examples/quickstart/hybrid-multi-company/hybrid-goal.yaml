@@ -1,0 +1,76 @@
+# Hybrid Goal Example
+# Develops a messaging system using both Claude and OpenClaw agents
+
+apiVersion: opc/v1
+kind: Goal
+metadata:
+  name: messaging-system
+  federation: tech-group
+spec:
+  description: |
+    Develop and deploy an enterprise messaging system.
+    This goal will be automatically decomposed across companies.
+  
+  targetCompanies:
+    - software
+    - operations
+    - sales
+  
+  deadline: 2026-04-30
+  
+  # High-level requirements (AI will decompose into tasks)
+  requirements:
+    - Real-time messaging with WebSocket
+    - User authentication and authorization
+    - Message history and search
+    - File attachments support
+    - Deployment to cloud
+    - User documentation
+  
+  # Approval gates for human oversight
+  approvalGates:
+    - afterProject: software-core
+      reason: Code review before deployment
+    - afterTask: production-deploy
+      reason: Verify staging success
+  
+  # Context to inject across companies
+  sharedContext:
+    projectName: enterprise-messenger
+    techStack:
+      backend: Go
+      frontend: React
+      database: PostgreSQL
+    designDocs: /shared/docs/messenger-design.md
+
+---
+# Example of auto-decomposed project structure
+# (This is what OPC generates from the goal)
+
+# apiVersion: opc/v1
+# kind: Project
+# metadata:
+#   name: software-core
+#   goalId: messaging-system
+#   company: software
+# spec:
+#   tasks:
+#     - name: backend-api
+#       agent: software-coder  # Claude Code
+#       issues:
+#         - Implement WebSocket server
+#         - Create REST API endpoints
+#         - Add authentication middleware
+#     
+#     - name: testing
+#       agent: software-coder  # Claude Code
+#       issues:
+#         - Write unit tests
+#         - Integration tests
+#         - Load testing
+#     
+#     - name: ci-setup
+#       agent: software-automator  # OpenClaw
+#       issues:
+#         - GitHub Actions workflow
+#         - Docker build pipeline

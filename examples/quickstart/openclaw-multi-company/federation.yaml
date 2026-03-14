@@ -1,0 +1,30 @@
+apiVersion: opc/v1
+kind: Federation
+metadata:
+  name: tech-group
+  labels:
+    industry: technology
+    tier: enterprise
+spec:
+  description: "Tech group federation with software, operations, and sales companies"
+  governance:
+    heartbeatInterval: 30s
+    heartbeatTimeout: 90s
+    maxCompanies: 10
+    interventionPolicy: approval-required
+  communication:
+    protocol: websocket
+    messageBus: internal
+    retryPolicy:
+      maxRetries: 3
+      backoff: exponential
+  companies:
+    - name: software
+      type: software
+      endpoint: http://localhost:9527
+    - name: operations
+      type: operations
+      endpoint: http://localhost:9528
+    - name: sales
+      type: sales
+      endpoint: http://localhost:9529

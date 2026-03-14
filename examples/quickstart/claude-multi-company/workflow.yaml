@@ -1,0 +1,59 @@
+# Claude Multi-Team Development Workflow
+# Coordinates tasks across software, operations, and sales teams
+
+apiVersion: opc/v1
+kind: Workflow
+metadata:
+  name: multi-team-dev
+  description: Multi-team product development workflow
+spec:
+  steps:
+    # Step 1: Software team develops the feature
+    - name: develop
+      agent: software-team
+      message: |
+        Develop a messaging system with the following requirements:
+        - Real-time message delivery
+        - User authentication
+        - Message history
+        
+        Create the core implementation and tests.
+      outputs:
+        - code_path
+        - test_results
+
+    # Step 2: Operations team deploys (depends on develop)
+    - name: deploy
+      agent: operations-team
+      dependsOn:
+        - develop
+      message: |
+        Deploy the messaging system from ${{ steps.develop.outputs.code_path }}
+        
+        Tasks:
+        - Create Dockerfile
+        - Set up CI/CD pipeline
+        - Configure monitoring
+      outputs:
+        - deployment_url
+        - monitoring_dashboard
+
+    # Step 3: Sales team creates docs (depends on deploy)
+    - name: document
+      agent: sales-team
+      dependsOn:
+        - deploy
+      message: |
+        Create documentation for the messaging system:
+        - Deployment URL: ${{ steps.deploy.outputs.deployment_url }}
+        
+        Tasks:
+        - User guide
+        - API documentation
+        - Quick start guide
+      outputs:
+        - docs_url
+
+  # Workflow settings
+  timeout: 1h
+  onFailure: pause

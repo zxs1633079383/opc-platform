@@ -1,0 +1,67 @@
+apiVersion: opc/v1
+kind: Company
+metadata:
+  name: software
+  labels:
+    department: engineering
+spec:
+  type: software
+  endpoint: http://localhost:9527
+  agents:
+    - name: backend-dev
+      type: openclaw
+      runtime:
+        model:
+          provider: anthropic
+          name: claude-sonnet-4
+          fallback: claude-haiku-4
+        inference:
+          thinking: medium
+          temperature: 0.7
+          maxTokens: 16384
+        timeout:
+          task: 600s
+          idle: 1200s
+      resources:
+        tokenBudget:
+          perTask: 200000
+          perDay: 5000000
+        costLimit:
+          perTask: "$2"
+          perDay: "$50"
+        onExceed: pause
+      context:
+        workdir: /workspace/messaging-backend
+        skills:
+          - code-generation
+          - api-design
+          - database-schema
+
+    - name: frontend-dev
+      type: openclaw
+      runtime:
+        model:
+          provider: anthropic
+          name: claude-sonnet-4
+          fallback: claude-haiku-4
+        inference:
+          thinking: low
+          temperature: 0.7
+          maxTokens: 12288
+        timeout:
+          task: 600s
+          idle: 1200s
+      resources:
+        tokenBudget:
+          perTask: 150000
+          perDay: 3000000
+        costLimit:
+          perTask: "$1.50"
+          perDay: "$30"
+        onExceed: pause
+      context:
+        workdir: /workspace/messaging-frontend
+        skills:
+          - code-generation
+          - ui-development
+          - testing

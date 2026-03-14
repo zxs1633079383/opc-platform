@@ -1,0 +1,69 @@
+# Claude Multi-Company Agents
+# Multiple Claude Code agents representing different teams
+
+apiVersion: opc/v1
+kind: AgentSpec
+metadata:
+  name: software-team
+  labels:
+    team: software
+    role: development
+spec:
+  type: claude-code
+  replicas: 1
+  runtime:
+    inference:
+      thinking: low
+    timeout:
+      task: 600s
+  context:
+    workdir: /workspace/software
+    skills:
+      - coding
+      - testing
+      - code-review
+
+---
+apiVersion: opc/v1
+kind: AgentSpec
+metadata:
+  name: operations-team
+  labels:
+    team: operations
+    role: deployment
+spec:
+  type: claude-code
+  replicas: 1
+  runtime:
+    inference:
+      thinking: low
+    timeout:
+      task: 300s
+  context:
+    workdir: /workspace/ops
+    skills:
+      - devops
+      - monitoring
+      - deployment
+
+---
+apiVersion: opc/v1
+kind: AgentSpec
+metadata:
+  name: sales-team
+  labels:
+    team: sales
+    role: documentation
+spec:
+  type: claude-code
+  replicas: 1
+  runtime:
+    inference:
+      thinking: low
+    timeout:
+      task: 300s
+  context:
+    workdir: /workspace/sales
+    skills:
+      - documentation
+      - copywriting
