@@ -1,0 +1,28 @@
+[Unit]
+Description=OPC Platform - AI Agent Cluster Manager
+Documentation=https://github.com/zlc-ai/opc-platform
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=opc
+Group=opc
+ExecStart=/usr/local/bin/opctl serve
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=65535
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/opc /var/log/opc
+
+# Environment
+Environment=OPC_CONFIG_DIR=/etc/opc
+Environment=OPC_STATE_DIR=/var/lib/opc
+Environment=OPC_LOG_LEVEL=info
+
+[Install]
+WantedBy=multi-user.target
