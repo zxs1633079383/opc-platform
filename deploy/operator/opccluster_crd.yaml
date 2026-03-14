@@ -1,0 +1,87 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: opcclusters.opc.zlc.ai
+spec:
+  group: opc.zlc.ai
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                storage:
+                  type: object
+                  properties:
+                    type:
+                      type: string
+                      enum: [sqlite, postgres]
+                    dsn:
+                      type: string
+                auth:
+                  type: object
+                  properties:
+                    enabled:
+                      type: boolean
+                    jwtSecret:
+                      type: string
+                gateway:
+                  type: object
+                  properties:
+                    telegram:
+                      type: object
+                      properties:
+                        enabled:
+                          type: boolean
+                        tokenSecret:
+                          type: string
+                    discord:
+                      type: object
+                      properties:
+                        enabled:
+                          type: boolean
+                        tokenSecret:
+                          type: string
+                server:
+                  type: object
+                  properties:
+                    port:
+                      type: integer
+                    replicas:
+                      type: integer
+            status:
+              type: object
+              properties:
+                phase:
+                  type: string
+                agents:
+                  type: integer
+                ready:
+                  type: boolean
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Phase
+          type: string
+          jsonPath: .status.phase
+        - name: Agents
+          type: integer
+          jsonPath: .status.agents
+        - name: Ready
+          type: boolean
+          jsonPath: .status.ready
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
+  scope: Namespaced
+  names:
+    plural: opcclusters
+    singular: opccluster
+    kind: OPCCluster
+    shortNames:
+      - opc
