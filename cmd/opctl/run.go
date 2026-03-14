@@ -14,11 +14,6 @@ import (
 var runCmd = &cobra.Command{
 	Use:   "run",
 	Short: "Execute a task or workflow",
-}
-
-var runTaskCmd = &cobra.Command{
-	Use:   "--agent <name> <message>",
-	Short: "Execute a task against an agent",
 	RunE:  runRunTask,
 }
 
@@ -35,11 +30,9 @@ var (
 )
 
 func init() {
-	runTaskCmd.Flags().StringVar(&runAgentName, "agent", "", "agent name (required)")
-	runTaskCmd.MarkFlagRequired("agent")
-	runTaskCmd.Flags().BoolVar(&runStream, "stream", false, "enable streaming output")
+	runCmd.Flags().StringVar(&runAgentName, "agent", "", "agent name")
+	runCmd.Flags().BoolVar(&runStream, "stream", false, "enable streaming output")
 
-	runCmd.AddCommand(runTaskCmd)
 	runCmd.AddCommand(runWorkflowCmd)
 	rootCmd.AddCommand(runCmd)
 
@@ -54,6 +47,9 @@ func init() {
 
 func runRunTask(cmd *cobra.Command, args []string) error {
 	if runAgentName == "" {
+		if len(args) == 0 {
+			return cmd.Help()
+		}
 		return fmt.Errorf("--agent flag is required")
 	}
 	if len(args) == 0 {
