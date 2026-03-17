@@ -16,6 +16,7 @@
 | 2 | Multi-Agent | Week 3-4 | 🟢 已完成 | 100% |
 | 3 | Orchestration | Week 5-6 | 🟢 已完成 | 100% |
 | 4 | Production Ready | Week 7-8 | 🟢 已完成 | 100% |
+| 5 | AI Goal Decomposition | Week 9-10 | 🔵 进行中 | 0% |
 
 **状态图例**：
 - ⚪ 未开始
@@ -597,6 +598,229 @@ opctl audit export --format json    # 导出审计日志
 
 ---
 
+# Phase 5: AI Goal Decomposition（Week 9-10）
+
+## Project 5.1: Goal AI 分解引擎
+
+### Task 5.1.1: 类型系统扩展
+**优先级**: P0 | **预估**: 0.5d | **状态**: ⚪
+
+| Issue | 描述 | 状态 | 负责人 |
+|-------|------|------|--------|
+| 5.1.1.1 | GoalBody 新增 AutoDecompose/Constraints/Approval 字段 | ⚪ | - |
+| 5.1.1.2 | GoalRecord 新增 Phase/DecompositionPlan 字段 | ⚪ | - |
+| 5.1.1.3 | goal.go 新增 GoalPhase 状态枚举 | ⚪ | - |
+| 5.1.1.4 | DecomposeResult 扩展（Complexity/DependsOn/AgentSuggestion） | ⚪ | - |
+
+**验收标准**：
+- [ ] 新字段向后兼容（AutoDecompose 默认 false）
+- [ ] 编译通过
+
+---
+
+### Task 5.1.2: Decomposer 接口重构
+**优先级**: P0 | **预估**: 0.5d | **状态**: ⚪
+
+| Issue | 描述 | 状态 | 负责人 |
+|-------|------|------|--------|
+| 5.1.2.1 | 将 Decomposer 改为 interface | ⚪ | - |
+| 5.1.2.2 | 当前实现改名为 StaticDecomposer | ⚪ | - |
+
+**验收标准**：
+- [ ] 现有代码不受影响
+- [ ] 编译通过
+
+---
+
+### Task 5.1.3: AI Decomposer 实现
+**优先级**: P0 | **预估**: 2d | **状态**: ⚪
+
+| Issue | 描述 | 状态 | 负责人 |
+|-------|------|------|--------|
+| 5.1.3.1 | 新建 pkg/goal/ai_decomposer.go | ⚪ | - |
+| 5.1.3.2 | 新建 pkg/goal/prompt.go（Prompt 模板） | ⚪ | - |
+| 5.1.3.3 | 通过 Controller 调用 claude agent 执行分解 | ⚪ | - |
+| 5.1.3.4 | JSON 结构化输出解析和验证 | ⚪ | - |
+| 5.1.3.5 | 分解成本独立追踪 | ⚪ | - |
+| 5.1.3.6 | 单元测试（mock LLM 响应） | ⚪ | - |
+
+**验收标准**：
+- [ ] AI 能根据 Goal 描述生成合理的 Project/Task/Issue 层级
+- [ ] JSON 解析失败有重试机制（最多 2 次）
+- [ ] 测试覆盖率 > 80%
+
+---
+
+### Task 5.1.4: server.go Goal 流程改造
+**优先级**: P0 | **预估**: 1d | **状态**: ⚪
+
+| Issue | 描述 | 状态 | 负责人 |
+|-------|------|------|--------|
+| 5.1.4.1 | KindGoal 分支支持 autoDecompose 检测 | ⚪ | - |
+| 5.1.4.2 | 调用 AIDecomposer → 持久化分解结果 | ⚪ | - |
+| 5.1.4.3 | 提取现有 decomposition 逻辑为 executeDecomposition() | ⚪ | - |
+| 5.1.4.4 | 自动创建 Agent + 异步执行（复用现有逻辑） | ⚪ | - |
+
+**验收标准**：
+- [ ] autoDecompose=false 走原有流程（向后兼容）
+- [ ] autoDecompose=true 走 AI 分解流程
+
+---
+
+## Project 5.2: Plan 审查流程
+
+### Task 5.2.1: CLI 新增命令
+**优先级**: P0 | **预估**: 1d | **状态**: ⚪
+
+| Issue | 描述 | 状态 | 负责人 |
+|-------|------|------|--------|
+| 5.2.1.1 | goal create 新增 --auto-decompose flag | ⚪ | - |
+| 5.2.1.2 | 实现 opctl goal plan <id> 查看分解方案 | ⚪ | - |
+| 5.2.1.3 | 实现 opctl goal approve <id> 确认执行 | ⚪ | - |
+| 5.2.1.4 | 实现 opctl goal revise <id> --file 修改方案 | ⚪ | - |
+
+**验收标准**：
+- [ ] Plan 模式下创建 Goal 不会立即执行
+- [ ] approve 后才触发 Agent 创建和任务执行
+
+---
+
+### Task 5.2.2: API 端点
+**优先级**: P0 | **预估**: 1d | **状态**: ⚪
+
+| Issue | 描述 | 状态 | 负责人 |
+|-------|------|------|--------|
+| 5.2.2.1 | GET /api/goals/:id/plan 查看分解方案 | ⚪ | - |
+| 5.2.2.2 | POST /api/goals/:id/approve 确认执行 | ⚪ | - |
+| 5.2.2.3 | POST /api/goals/:id/revise 修改方案 | ⚪ | - |
+
+**验收标准**：
+- [ ] API 响应包含完整的分解层级树
+- [ ] approve 触发执行流程
+
+---
+
+## Project 5.3: Guardrails 安全阀
+
+### Task 5.3.1: 分解约束和自动模式
+**优先级**: P1 | **预估**: 1d | **状态**: ⚪
+
+| Issue | 描述 | 状态 | 负责人 |
+|-------|------|------|--------|
+| 5.3.1.1 | 实现 DecomposeConstraints 校验 | ⚪ | - |
+| 5.3.1.2 | 实现 --auto-approve 模式 | ⚪ | - |
+| 5.3.1.3 | 超限自动降级为 Plan 模式 | ⚪ | - |
+| 5.3.1.4 | 分解成本预估 | ⚪ | - |
+
+**验收标准**：
+- [ ] 超过 maxProjects/maxTasks/maxAgents 限制时自动降级
+- [ ] --auto-approve 模式下带 guardrail 直接执行
+
+---
+
+## Phase 5 交付物清单
+
+- [ ] AI Goal 分解引擎（AIDecomposer）
+- [ ] Plan → Approve → Execute 三段式流程
+- [ ] Guardrails 安全阀
+- [ ] CLI 命令：goal plan/approve/revise
+- [ ] API 端点：plan/approve/revise
+- [ ] 单元测试
+
+---
+
+# Phase 5b: v0.5 TODO 落地（Week 10-11）
+
+## Project 5.4: P0 紧急修复
+
+### Task 5.4.1: OpenClaw Execute 结果存储
+**优先级**: P0 | **预估**: 0.5h | **状态**: ⚪
+| Issue | 描述 | 状态 |
+|-------|------|------|
+| 5.4.1.1 | openclaw Execute() 返回 result 写入 TaskRecord.Result | ⚪ |
+
+### Task 5.4.2: Workflow Toggle 端点
+**优先级**: P0 | **预估**: 0.5h | **状态**: ⚪
+| Issue | 描述 | 状态 |
+|-------|------|------|
+| 5.4.2.1 | 后端 PUT /api/workflows/:name/toggle handler | ⚪ |
+
+### Task 5.4.3: Federation 认证
+**优先级**: P0 | **预估**: 3h | **状态**: ⚪
+| Issue | 描述 | 状态 |
+|-------|------|------|
+| 5.4.3.1 | 新建 pkg/federation/auth.go (HMAC-SHA256) | ⚪ |
+| 5.4.3.2 | Company 注册时生成 APIKey | ⚪ |
+| 5.4.3.3 | server.go federation auth middleware | ⚪ |
+
+## Project 5.5: P1 核心完善
+
+### Task 5.5.1: OpenClaw 密钥持久化 + 自动读 Token
+**优先级**: P1 | **预估**: 2h | **状态**: ⚪
+| Issue | 描述 | 状态 |
+|-------|------|------|
+| 5.5.1.1 | loadOrCreateIdentity() 持久化到 ~/.opc/identity/ | ⚪ |
+| 5.5.1.2 | 自动读取 ~/.openclaw/openclaw.json gateway token | ⚪ |
+
+### Task 5.5.2: Goal 分解持久化 + 成本追踪
+**优先级**: P1 | **预估**: 1h | **状态**: ⚪
+| Issue | 描述 | 状态 |
+|-------|------|------|
+| 5.5.2.1 | DecompositionPlan JSON 写入 GoalRecord | ⚪ |
+| 5.5.2.2 | DecomposeCost 字段写入 | ⚪ |
+
+### Task 5.5.3: Federation 断线重试
+**优先级**: P1 | **预估**: 3h | **状态**: ⚪
+| Issue | 描述 | 状态 |
+|-------|------|------|
+| 5.5.3.1 | 新建 pkg/federation/retry.go (RetryQueue) | ⚪ |
+| 5.5.3.2 | callback 失败入队 + 指数退避重试 | ⚪ |
+| 5.5.3.3 | federation_retry_queue 表 | ⚪ |
+
+### Task 5.5.4: Workflow 执行详情
+**优先级**: P1 | **预估**: 3h | **状态**: ⚪
+| Issue | 描述 | 状态 |
+|-------|------|------|
+| 5.5.4.1 | 后端 GET /api/workflows/:name/runs + runs/:id | ⚪ |
+| 5.5.4.2 | 前端 WorkflowRunDetail 组件 | ⚪ |
+
+### Task 5.5.5: 远程 Goal 自动分解
+**优先级**: P1 | **预估**: 2h | **状态**: ⚪
+| Issue | 描述 | 状态 |
+|-------|------|------|
+| 5.5.5.1 | 远程 OPC 收到 federated goal 后触发 AI 分解 | ⚪ |
+
+### Task 5.5.6: Milestone 推送通知
+**优先级**: P1 | **预估**: 1.5h | **状态**: ⚪
+| Issue | 描述 | 状态 |
+|-------|------|------|
+| 5.5.6.1 | project 完成时 notifyMilestone() 回调主 OPC | ⚪ |
+
+## Project 5.6: P2 体验增强
+
+### Task 5.6.1: CLI goal plan 树形输出
+**优先级**: P2 | **预估**: 1h | **状态**: ⚪
+
+### Task 5.6.2: Dashboard Goals 分解可视化
+**优先级**: P2 | **预估**: 2h | **状态**: ⚪
+
+### Task 5.6.3: Workflow 编辑功能
+**优先级**: P2 | **预估**: 4h | **状态**: ⚪
+
+### Task 5.6.4: 迭代分解
+**优先级**: P2 | **预估**: 6h | **状态**: ⚪
+
+### Task 5.6.5: 智能路由（按公司类型）
+**优先级**: P2 | **预估**: 2h | **状态**: ⚪
+
+### Task 5.6.6: 跨公司依赖管理
+**优先级**: P2 | **预估**: 4h | **状态**: ⚪
+
+### Task 5.6.7: Federation 远程公司原生渲染
+**优先级**: P2 | **预估**: 2h | **状态**: ⚪
+
+---
+
 # 📅 里程碑
 
 | 里程碑 | 日期 | 交付物 |
@@ -606,6 +830,7 @@ opctl audit export --format json    # 导出审计日志
 | M3: Orchestration | Week 6 | Workflow + Dispatcher |
 | M4: Production | Week 8 | 成本控制 + Gateway + Dashboard |
 | **MVP Launch** | Week 8 | 公开发布 |
+| M5: AI Goal Decomposition | Week 10 | Goal 智能分解 + Plan 审查 + Guardrails |
 
 ---
 
@@ -617,8 +842,11 @@ opctl audit export --format json    # 导出审计日志
 | 开发资源不足 | 中 | 高 | P2 功能延后 |
 | 用户需求偏差 | 中 | 中 | 每周用户访谈 |
 | 技术债务累积 | 高 | 中 | 每个 Phase 预留重构时间 |
+| AI 分解质量不稳定 | 高 | 高 | Few-shot examples + JSON 校验 + Plan 模式 |
+| 分解成本失控 | 中 | 中 | 独立预算 + Guardrails + 便宜模型优先 |
+| 自动创建 Agent 安全风险 | 中 | 高 | 最大 Agent 数限制 + 白名单机制 |
 
 ---
 
-*最后更新: 2026-03-14*
+*最后更新: 2026-03-17*
 *下次 Review: 每周一 10:00*

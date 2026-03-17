@@ -34,3 +34,4 @@ cost-events.jsonl
 .env
 .env.local
 .env.*.local
+.gitnexus

@@ -885,7 +885,110 @@ notifications:
 - **任务恢复**：未完成任务自动续接
 - 上下文污染自动检测和清理
 
-#### 5.3.3 团队协作
+#### 5.3.3 Goal 智能自动分解
+
+**核心理念**：用户只需声明一个战略目标（Goal），系统自动用 AI 拆解为 Project → Task → Issue，自动分配/创建 Agent，自动开始执行。这是 OPC 作为"AI Agent 的 Kubernetes"的核心价值——**声明期望状态，系统自动实现**。
+
+**Goal 自动分解流程**：
+
+```
+用户: opctl goal create --name "构建IM系统" --auto-decompose
+  │
+  ▼
+┌─────────────────────────────────────┐
+│  1. 创建 Goal（状态: Decomposing）    │
+└──────────────────┬──────────────────┘
+                   ▼
+┌─────────────────────────────────────┐
+│  2. AI 分解引擎（调用 LLM）          │
+│  • 构造 Decomposition Prompt        │
+│  • 通过 claude --print 调用         │
+│  • 解析 JSON → Projects/Tasks/Issues│
+│  • 验证结构完整性                    │
+└──────────────────┬──────────────────┘
+                   ▼
+┌─────────────────────────────────────┐
+│  3. 分解结果持久化（状态: Planned）    │
+│  • 创建 ProjectRecord[]             │
+│  • 创建 IssueRecord[]               │
+│  • 预估成本和 token 消耗             │
+└──────────────────┬──────────────────┘
+                   ▼
+┌─────────────────────────────────────┐
+│  4. 审查确认                         │
+│  • opctl goal plan <id>   查看方案   │
+│  • opctl goal approve <id> 确认执行  │
+│  • opctl goal revise <id>  修改方案  │
+│  （或 --auto-approve 跳过此步）      │
+└──────────────────┬──────────────────┘
+                   ▼
+┌─────────────────────────────────────┐
+│  5. 自动执行（状态: InProgress）      │
+│  • 自动创建/启动 Agent              │
+│  • 按依赖顺序异步执行 Task          │
+│  • Federation 跨公司分发（如配置）   │
+└─────────────────────────────────────┘
+```
+
+**Goal YAML 规范（扩展）**：
+
+```yaml
+apiVersion: opc/v1
+kind: Goal
+metadata:
+  name: build-messaging-system
+spec:
+  description: "构建一个支持实时消息、群聊、文件传输的即时通讯系统"
+  owner: founder
+  deadline: 2026-04-30
+
+  # ===== AI 自动分解配置 =====
+  autoDecompose: true           # 启用 AI 自动分解
+  approval: required            # required | auto（是否需要人工确认）
+
+  # 分解约束（Guardrails）
+  constraints:
+    maxProjects: 5              # 最多 5 个 Project
+    maxTasksPerProject: 10      # 每个 Project 最多 10 个 Task
+    maxAgents: 8                # 最多创建 8 个 Agent
+    maxBudget: "$50"            # 分解+执行总预算
+    preferredAgentTypes:        # 偏好的 Agent 类型
+      - claude-code
+
+  # Federation 公司映射（可选）
+  companyMapping:
+    "backend-*": software       # 后端相关 Project 分配给 software 公司
+    "frontend-*": frontend      # 前端相关 Project 分配给 frontend 公司
+
+  budget:
+    total: "$100"
+    alert: "80%"
+```
+
+**审查命令**：
+```bash
+# 查看 AI 生成的分解方案
+opctl goal plan build-messaging-system
+
+# 确认执行
+opctl goal approve build-messaging-system
+
+# 修改后重新提交
+opctl goal revise build-messaging-system --file revised-plan.yaml
+
+# 一步到位（带 guardrail 的自动模式）
+opctl goal create --name "构建IM系统" --auto-decompose --auto-approve \
+  --max-cost $10 --max-agents 5 --max-tasks 20
+```
+
+**Guardrails（安全阀）**：
+- 最大 project/task/issue 数量限制
+- 最大预估成本限制
+- 最大 Agent 创建数量限制
+- 超过任何 guardrail 自动降级为 Plan 模式（需人工确认）
+- 分解成本独立追踪
+
+#### 5.3.4 团队协作
 
 - 多用户共享 Agent 池
 - RBAC 权限控制
