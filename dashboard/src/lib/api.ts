@@ -301,3 +301,24 @@ export async function updateSettings(settings: Record<string, unknown>): Promise
   })
   if (!response.ok) throw new Error('Failed to save settings')
 }
+
+export async function createAgent(agent: { name: string; type: string; model?: string }): Promise<Agent> {
+  const yaml = `apiVersion: opc/v1
+kind: AgentSpec
+metadata:
+  name: ${agent.name}
+spec:
+  type: ${agent.type}
+  runtime:
+    model:
+      name: ${agent.model || 'claude-sonnet-4'}
+  context:
+    workdir: /tmp/opc`
+  const response = await fetch(`${API_BASE}/apply`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-yaml' },
+    body: yaml,
+  })
+  if (!response.ok) throw new Error('Failed to create agent')
+  return response.json()
+}

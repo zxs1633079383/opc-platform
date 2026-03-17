@@ -174,3 +174,21 @@ export interface Issue {
   createdAt: string
   updatedAt: string
 }
+
+export interface GoalTask {
+  name: string
+  status: string
+  agent?: string
+  children?: GoalTask[]
+}
+
+export interface Settings {
+  anthropicKey?: string
+  openaiKey?: string
+  telegramToken?: string
+  discordToken?: string
+  dailyBudget?: number
+  monthlyBudget?: number
+  notificationsEnabled?: boolean
+  [key: string]: unknown
+}

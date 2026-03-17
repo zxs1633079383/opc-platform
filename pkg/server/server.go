@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -17,6 +19,7 @@ import (
 	"github.com/zlc-ai/opc-platform/pkg/cost"
 	"github.com/zlc-ai/opc-platform/pkg/federation"
 	"github.com/zlc-ai/opc-platform/pkg/gateway"
+	"github.com/zlc-ai/opc-platform/pkg/goal"
 	"github.com/zlc-ai/opc-platform/pkg/workflow"
 	"go.uber.org/zap"
 	"gopkg.in/yaml.v3"

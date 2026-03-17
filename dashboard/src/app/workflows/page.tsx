@@ -1,117 +1,30 @@
 'use client'
 
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { Plus, Play, Pause, Clock, Workflow, X, Trash2, AlertTriangle } from 'lucide-react'
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { Plus, Play, Pause, Clock, ChevronDown, ChevronRight, CheckCircle, XCircle, Loader2 } from 'lucide-react'
-import { fetchWorkflows, fetchWorkflowRuns } from '@/lib/api'
-import type { WorkflowRun, WorkflowStepResult } from '@/types'
-
-function RunSteps({ stepsJson }: { stepsJson: string }) {
-  let steps: WorkflowStepResult[] = []
-  try {
-    steps = JSON.parse(stepsJson || '[]')
-  } catch {
-    return <span className="text-xs text-gray-400">Invalid steps data</span>
-  }
-
-  if (steps.length === 0) {
-    return <span className="text-xs text-gray-400">No steps</span>
-  }
-
-  return (
-    <div className="mt-2 space-y-1">
-      {steps.map((step) => (
-        <div key={step.name} className="flex items-center gap-2 text-sm">
-          {step.status === 'Completed' ? (
-            <CheckCircle className="w-4 h-4 text-green-500" />
-          ) : step.status === 'Failed' ? (
-            <XCircle className="w-4 h-4 text-red-500" />
-          ) : step.status === 'Running' ? (
-            <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />
-          ) : (
-            <div className="w-4 h-4 rounded-full border border-gray-300" />
-          )}
-          <span className="text-gray-700 dark:text-gray-300">{step.name}</span>
-          <span className="text-xs text-gray-400">{step.status}</span>
-          {step.error && (
-            <span className="text-xs text-red-400 ml-2">{step.error}</span>
-          )}
-        </div>
-      ))}
-    </div>
-  )
-}
-
-function WorkflowRunHistory({ workflowName }: { workflowName: string }) {
-  const [expandedRun, setExpandedRun] = useState<string | null>(null)
-
-  const { data: runs = [], isLoading } = useQuery({
-    queryKey: ['workflowRuns', workflowName],
-    queryFn: () => fetchWorkflowRuns(workflowName),
-  })
-
-  if (isLoading) {
-    return (
-      <div className="flex items-center gap-2 text-sm text-gray-400 mt-3">
-        <Loader2 className="w-4 h-4 animate-spin" />
-        Loading runs...
-      </div>
-    )
-  }
-
-  if (runs.length === 0) {
-    return (
-      <p className="text-sm text-gray-400 mt-3">No run history yet</p>
-    )
-  }
-
-  return (
-    <div className="mt-3 space-y-2">
-      <h4 className="text-sm font-medium text-gray-600 dark:text-gray-400">Run History</h4>
-      {runs.map((run: WorkflowRun) => (
-        <div
-          key={run.id}
-          className="border border-gray-100 dark:border-gray-700 rounded-lg p-3"
-        >
-          <button
-            onClick={() => setExpandedRun(expandedRun === run.id ? null : run.id)}
-            className="flex items-center gap-2 w-full text-left"
-          >
-            {expandedRun === run.id ? (
-              <ChevronDown className="w-4 h-4 text-gray-400" />
-            ) : (
-              <ChevronRight className="w-4 h-4 text-gray-400" />
-            )}
-            <span className="text-sm font-mono text-gray-600 dark:text-gray-300">
-              {run.id.slice(0, 12)}
-            </span>
-            <span className={`text-xs px-2 py-0.5 rounded-full ${
-              run.status === 'Completed' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
-              run.status === 'Failed' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' :
-              run.status === 'Running' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' :
-              'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400'
-            }`}>
-              {run.status}
-            </span>
-            <span className="text-xs text-gray-400 ml-auto">
-              {new Date(run.startedAt).toLocaleString()}
-            </span>
-          </button>
-          {expandedRun === run.id && (
-            <RunSteps stepsJson={run.stepsJson ?? (typeof run.steps === 'string' ? run.steps : JSON.stringify(run.steps ?? []))} />
-          )}
-        </div>
-      ))}
-    </div>
-  )
-}
+import { fetchWorkflows, runWorkflow, deleteWorkflow } from '@/lib/api'
 
 export default function WorkflowsPage() {
-  const [expandedWorkflow, setExpandedWorkflow] = useState<string | null>(null)
+  const queryClient = useQueryClient()
+  const [showCreateModal, setShowCreateModal] = useState(false)
+  const [actionError, setActionError] = useState<string | null>(null)
 
   const { data: workflows = [], isLoading } = useQuery({
     queryKey: ['workflows'],
     queryFn: fetchWorkflows,
+  })
+
+  const runMutation = useMutation({
+    mutationFn: runWorkflow,
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['workflows'] }); setActionError(null) },
+    onError: (err: Error) => setActionError(err.message),
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: deleteWorkflow,
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['workflows'] }); setActionError(null) },
+    onError: (err: Error) => setActionError(err.message),
   })
 
   return (
@@ -125,29 +38,54 @@ export default function WorkflowsPage() {
             Manage automated workflows and schedules
           </p>
         </div>
-        <button className="flex items-center gap-2 px-4 py-2 text-sm text-white bg-primary-600 hover:bg-primary-700 rounded-lg transition-colors">
+        <button
+          onClick={() => setShowCreateModal(true)}
+          className="flex items-center gap-2 px-4 py-2 text-sm text-white bg-primary-600 hover:bg-primary-700 rounded-lg transition-colors"
+        >
           <Plus className="w-4 h-4" />
           Create Workflow
         </button>
       </div>
 
+      {/* Error Banner */}
+      {actionError && (
+        <div className="flex items-center gap-3 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+          <AlertTriangle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0" />
+          <p className="text-sm text-red-700 dark:text-red-300 flex-1">{actionError}</p>
+          <button onClick={() => setActionError(null)} className="text-red-500 hover:text-red-700">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       {isLoading ? (
-        <div className="flex items-center justify-center h-48">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500" />
+        <div className="grid gap-4">
+          {[1, 2].map((i) => (
+            <div key={i} className="animate-pulse bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6">
+              <div className="h-5 bg-gray-200 dark:bg-gray-700 rounded w-1/4 mb-3" />
+              <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded w-1/6 mb-4" />
+              <div className="flex gap-3">
+                <div className="h-7 bg-gray-200 dark:bg-gray-700 rounded w-20" />
+                <div className="h-7 bg-gray-200 dark:bg-gray-700 rounded w-20" />
+                <div className="h-7 bg-gray-200 dark:bg-gray-700 rounded w-20" />
+              </div>
+            </div>
+          ))}
         </div>
       ) : workflows.length === 0 ? (
         <div className="bg-white dark:bg-gray-900 rounded-xl shadow-sm border border-gray-200 dark:border-gray-800 p-12">
           <div className="max-w-md mx-auto text-center">
-            <div className="w-16 h-16 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mx-auto mb-4">
-              <Clock className="w-8 h-8 text-gray-400" />
-            </div>
+            <Workflow className="w-16 h-16 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
             <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
               No workflows yet
             </h3>
             <p className="text-gray-500 dark:text-gray-400 mb-6">
               Create your first workflow to automate multi-step agent tasks
             </p>
-            <button className="inline-flex items-center gap-2 px-4 py-2 text-sm text-white bg-primary-600 hover:bg-primary-700 rounded-lg transition-colors">
+            <button
+              onClick={() => setShowCreateModal(true)}
+              className="inline-flex items-center gap-2 px-4 py-2 text-sm text-white bg-primary-600 hover:bg-primary-700 rounded-lg transition-colors"
+            >
               <Plus className="w-4 h-4" />
               Create Workflow
             </button>
@@ -162,58 +100,106 @@ export default function WorkflowsPage() {
             >
               <div className="flex items-start justify-between">
                 <div>
-                  <button
-                    onClick={() => setExpandedWorkflow(expandedWorkflow === workflow.name ? null : workflow.name)}
-                    className="flex items-center gap-2"
-                  >
-                    {expandedWorkflow === workflow.name ? (
-                      <ChevronDown className="w-5 h-5 text-gray-400" />
-                    ) : (
-                      <ChevronRight className="w-5 h-5 text-gray-400" />
-                    )}
-                    <h3 className="text-lg font-medium text-gray-900 dark:text-white">
-                      {workflow.name}
-                    </h3>
-                  </button>
+                  <h3 className="text-lg font-medium text-gray-900 dark:text-white">
+                    {workflow.name}
+                  </h3>
                   {workflow.schedule && (
-                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 ml-7">
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
                       <Clock className="w-4 h-4 inline mr-1" />
                       {workflow.schedule}
                     </p>
                   )}
                 </div>
                 <div className="flex gap-2">
-                  {workflow.enabled ? (
-                    <button className="p-2 text-yellow-600 hover:bg-yellow-50 dark:hover:bg-yellow-900/20 rounded-lg">
-                      <Pause className="w-5 h-5" />
-                    </button>
-                  ) : (
-                    <button className="p-2 text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-lg">
-                      <Play className="w-5 h-5" />
-                    </button>
-                  )}
+                  <button
+                    onClick={() => runMutation.mutate(workflow.name)}
+                    disabled={runMutation.isPending}
+                    className="p-2 text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-lg transition-colors disabled:opacity-50"
+                    title="Run workflow"
+                  >
+                    <Play className="w-5 h-5" />
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (confirm(`Delete workflow "${workflow.name}"?`)) {
+                        deleteMutation.mutate(workflow.name)
+                      }
+                    }}
+                    disabled={deleteMutation.isPending}
+                    className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors disabled:opacity-50"
+                    title="Delete workflow"
+                  >
+                    <Trash2 className="w-5 h-5" />
+                  </button>
                 </div>
               </div>
-              <div className="mt-4 flex gap-2 ml-7">
-                {workflow.steps.map((step, i) => (
+              <div className="mt-4 flex flex-wrap gap-2">
+                {(workflow.steps || []).map((step, i) => (
                   <div
                     key={step.name}
                     className="flex items-center gap-2"
                   >
-                    {i > 0 && <span className="text-gray-300">→</span>}
-                    <span className="px-2 py-1 bg-gray-100 dark:bg-gray-800 rounded text-sm">
+                    {i > 0 && <span className="text-gray-300 dark:text-gray-600">→</span>}
+                    <span className="px-2 py-1 bg-gray-100 dark:bg-gray-800 rounded text-sm text-gray-700 dark:text-gray-300">
                       {step.name}
                     </span>
                   </div>
                 ))}
+                {(!workflow.steps || workflow.steps.length === 0) && (
+                  <span className="text-sm text-gray-400 dark:text-gray-500 italic">No steps defined</span>
+                )}
               </div>
-              {expandedWorkflow === workflow.name && (
-                <div className="ml-7">
-                  <WorkflowRunHistory workflowName={workflow.name} />
-                </div>
-              )}
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Create Workflow Modal */}
+      {showCreateModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="fixed inset-0 bg-black/50" onClick={() => setShowCreateModal(false)} />
+          <div className="relative bg-white dark:bg-gray-900 rounded-xl shadow-xl border border-gray-200 dark:border-gray-800 p-6 w-full max-w-lg mx-4">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Create Workflow</h2>
+              <button onClick={() => setShowCreateModal(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="space-y-4">
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                Workflows are defined via YAML configuration. Create a workflow YAML file and apply it using the CLI:
+              </p>
+              <pre className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 text-sm text-gray-700 dark:text-gray-300 overflow-x-auto">
+{`# workflow.yaml
+apiVersion: opc/v1
+kind: Workflow
+metadata:
+  name: my-workflow
+spec:
+  schedule: "0 9 * * *"
+  steps:
+    - name: step-1
+      agent: my-agent
+      message: "Do something"
+    - name: step-2
+      agent: my-agent
+      message: "Do another thing"
+      dependsOn:
+        - step-1`}
+              </pre>
+              <pre className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3 text-sm font-mono text-gray-600 dark:text-gray-400">
+                opctl apply -f workflow.yaml
+              </pre>
+            </div>
+            <div className="flex justify-end mt-6">
+              <button
+                onClick={() => setShowCreateModal(false)}
+                className="px-4 py-2 text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
