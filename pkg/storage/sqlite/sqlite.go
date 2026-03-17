@@ -220,10 +220,11 @@ func (s *sqliteStore) DeleteAgent(ctx context.Context, name string) error {
 func (s *sqliteStore) CreateTask(ctx context.Context, task v1.TaskRecord) error {
 	now := time.Now()
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO tasks (id, agent_name, message, status, result, error, tokens_in, tokens_out, cost, created_at, updated_at, started_at, ended_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO tasks (id, agent_name, message, status, result, error, tokens_in, tokens_out, cost, issue_id, project_id, goal_id, created_at, updated_at, started_at, ended_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		task.ID, task.AgentName, task.Message, string(task.Status),
 		task.Result, task.Error, task.TokensIn, task.TokensOut, task.Cost,
+		task.IssueID, task.ProjectID, task.GoalID,
 		now, now, task.StartedAt, task.EndedAt,
 	)
 	if err != nil {
@@ -234,7 +235,7 @@ func (s *sqliteStore) CreateTask(ctx context.Context, task v1.TaskRecord) error 
 
 func (s *sqliteStore) GetTask(ctx context.Context, id string) (v1.TaskRecord, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, agent_name, message, status, result, error, tokens_in, tokens_out, cost, created_at, updated_at, started_at, ended_at
+		`SELECT id, agent_name, message, status, result, error, tokens_in, tokens_out, cost, issue_id, project_id, goal_id, created_at, updated_at, started_at, ended_at
 		 FROM tasks WHERE id = ?`, id,
 	)
 	return scanTask(row)
@@ -242,7 +243,7 @@ func (s *sqliteStore) GetTask(ctx context.Context, id string) (v1.TaskRecord, er
 
 func (s *sqliteStore) ListTasks(ctx context.Context) ([]v1.TaskRecord, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, agent_name, message, status, result, error, tokens_in, tokens_out, cost, created_at, updated_at, started_at, ended_at
+		`SELECT id, agent_name, message, status, result, error, tokens_in, tokens_out, cost, issue_id, project_id, goal_id, created_at, updated_at, started_at, ended_at
 		 FROM tasks ORDER BY created_at DESC`)
 	if err != nil {
 		return nil, fmt.Errorf("list tasks: %w", err)
@@ -262,7 +263,7 @@ func (s *sqliteStore) ListTasks(ctx context.Context) ([]v1.TaskRecord, error) {
 
 func (s *sqliteStore) ListTasksByAgent(ctx context.Context, agentName string) ([]v1.TaskRecord, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, agent_name, message, status, result, error, tokens_in, tokens_out, cost, created_at, updated_at, started_at, ended_at
+		`SELECT id, agent_name, message, status, result, error, tokens_in, tokens_out, cost, issue_id, project_id, goal_id, created_at, updated_at, started_at, ended_at
 		 FROM tasks WHERE agent_name = ? ORDER BY created_at DESC`, agentName)
 	if err != nil {
 		return nil, fmt.Errorf("list tasks for agent %q: %w", agentName, err)
@@ -282,10 +283,11 @@ func (s *sqliteStore) ListTasksByAgent(ctx context.Context, agentName string) ([
 
 func (s *sqliteStore) UpdateTask(ctx context.Context, task v1.TaskRecord) error {
 	_, err := s.db.ExecContext(ctx,
-		`UPDATE tasks SET status=?, result=?, error=?, tokens_in=?, tokens_out=?, cost=?, updated_at=?, started_at=?, ended_at=?
+		`UPDATE tasks SET status=?, result=?, error=?, tokens_in=?, tokens_out=?, cost=?, issue_id=?, project_id=?, goal_id=?, updated_at=?, started_at=?, ended_at=?
 		 WHERE id=?`,
 		string(task.Status), task.Result, task.Error,
 		task.TokensIn, task.TokensOut, task.Cost,
+		task.IssueID, task.ProjectID, task.GoalID,
 		time.Now(), task.StartedAt, task.EndedAt, task.ID,
 	)
 	if err != nil {
@@ -538,6 +540,7 @@ func scanTask(s scanner) (v1.TaskRecord, error) {
 	var startedAt, endedAt sql.NullTime
 	err := s.Scan(&t.ID, &t.AgentName, &t.Message, &status,
 		&t.Result, &t.Error, &t.TokensIn, &t.TokensOut, &t.Cost,
+		&t.IssueID, &t.ProjectID, &t.GoalID,
 		&t.CreatedAt, &t.UpdatedAt, &startedAt, &endedAt)
 	if err != nil {
 		return t, fmt.Errorf("scan task: %w", err)

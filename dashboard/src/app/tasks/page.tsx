@@ -1,12 +1,13 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
-import { Search, ChevronDown, ChevronUp, ListTodo, Bot } from 'lucide-react'
+import { Search, ChevronDown, ChevronUp, ChevronRight, ListTodo, Bot, Target, FolderKanban, GitBranch } from 'lucide-react'
 import { useState, useMemo } from 'react'
 import { clsx } from 'clsx'
 import { formatDistanceToNow } from 'date-fns'
-import { fetchTasks } from '@/lib/api'
+import { fetchTasks, fetchGoals, fetchProjects, fetchIssues } from '@/lib/api'
 import { useSearchParams } from 'next/navigation'
+import type { Task, Goal, Project, Issue } from '@/types'
 
 const statusTabs = [
   { value: 'all', label: 'All' },
@@ -33,11 +34,76 @@ export default function TasksPage() {
   const [statusFilter, setStatusFilter] = useState<string>(initialStatus)
   const [agentFilter, setAgentFilter] = useState<string>('all')
   const [expandedTask, setExpandedTask] = useState<string | null>(null)
+  const [viewMode, setViewMode] = useState<'flat' | 'hierarchy'>('flat')
+  const [expandedGoals, setExpandedGoals] = useState<Set<string>>(new Set())
+  const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set())
 
   const { data: tasks = [], isLoading } = useQuery({
     queryKey: ['tasks'],
     queryFn: fetchTasks,
   })
+
+  const { data: goals = [] } = useQuery({
+    queryKey: ['goals'],
+    queryFn: fetchGoals,
+    enabled: viewMode === 'hierarchy',
+  })
+
+  const { data: projects = [] } = useQuery({
+    queryKey: ['projects'],
+    queryFn: fetchProjects,
+    enabled: viewMode === 'hierarchy',
+  })
+
+  const { data: issues = [] } = useQuery({
+    queryKey: ['issues'],
+    queryFn: fetchIssues,
+    enabled: viewMode === 'hierarchy',
+  })
+
+  // Build hierarchy: Goal → Projects → Tasks → Issues
+  const hierarchy = useMemo(() => {
+    if (viewMode !== 'hierarchy') return []
+
+    const goalMap = new Map(goals.map(g => [g.id, g]))
+    const projectsByGoal = new Map<string, Project[]>()
+    for (const p of projects) {
+      const list = projectsByGoal.get(p.goalId) || []
+      list.push(p)
+      projectsByGoal.set(p.goalId, list)
+    }
+    const tasksByProject = new Map<string, Task[]>()
+    const tasksByGoal = new Map<string, Task[]>()
+    const orphanTasks: Task[] = []
+    for (const t of tasks) {
+      if (t.projectId) {
+        const list = tasksByProject.get(t.projectId) || []
+        list.push(t)
+        tasksByProject.set(t.projectId, list)
+      } else if (t.goalId) {
+        const list = tasksByGoal.get(t.goalId) || []
+        list.push(t)
+        tasksByGoal.set(t.goalId, list)
+      } else {
+        orphanTasks.push(t)
+      }
+    }
+    const issuesByProject = new Map<string, Issue[]>()
+    for (const i of issues) {
+      const list = issuesByProject.get(i.projectId) || []
+      list.push(i)
+      issuesByProject.set(i.projectId, list)
+    }
+
+    return { goalMap, projectsByGoal, tasksByProject, tasksByGoal, issuesByProject, orphanTasks }
+  }, [viewMode, goals, projects, tasks, issues])
+
+  const toggleGoal = (id: string) => {
+    setExpandedGoals(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s })
+  }
+  const toggleProject = (id: string) => {
+    setExpandedProjects(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s })
+  }
 
   const agentNames = useMemo(() => {
     const names = new Set(tasks.map(t => t.agentName))
@@ -79,8 +145,27 @@ export default function TasksPage() {
             View and manage task executions
           </p>
         </div>
+        <div className="flex gap-1 bg-gray-100 dark:bg-gray-800 rounded-lg p-1">
+          <button
+            onClick={() => setViewMode('flat')}
+            className={clsx('px-3 py-1.5 text-sm font-medium rounded-md transition-colors',
+              viewMode === 'flat' ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm' : 'text-gray-500'
+            )}
+          >
+            <ListTodo className="w-4 h-4 inline mr-1" />List
+          </button>
+          <button
+            onClick={() => setViewMode('hierarchy')}
+            className={clsx('px-3 py-1.5 text-sm font-medium rounded-md transition-colors',
+              viewMode === 'hierarchy' ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm' : 'text-gray-500'
+            )}
+          >
+            <GitBranch className="w-4 h-4 inline mr-1" />Hierarchy
+          </button>
+        </div>
       </div>
 
+      {viewMode === 'flat' && <>
       {/* Status Tabs */}
       <div className="flex gap-1 bg-gray-100 dark:bg-gray-800 rounded-lg p-1 overflow-x-auto">
         {statusTabs.map((tab) => (
@@ -238,9 +323,145 @@ export default function TasksPage() {
         )}
       </div>
 
+      </>}
+
+      {/* Hierarchy View */}
+      {viewMode === 'hierarchy' && hierarchy && typeof hierarchy === 'object' && 'goalMap' in hierarchy && (
+        <div className="bg-white dark:bg-gray-900 rounded-xl shadow-sm border border-gray-200 dark:border-gray-800">
+          <div className="p-4 border-b border-gray-200 dark:border-gray-800">
+            <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Goal → Project → Task → Issue</h3>
+          </div>
+          <div className="divide-y divide-gray-100 dark:divide-gray-800">
+            {goals.map((g) => {
+              const goalTasks = hierarchy.tasksByGoal?.get(g.id) || []
+              const goalProjects = hierarchy.projectsByGoal?.get(g.id) || []
+              const totalTasks = goalTasks.length + goalProjects.reduce((sum, p) => sum + (hierarchy.tasksByProject?.get(p.id)?.length || 0), 0)
+              const completedTasks = goalTasks.filter(t => t.status === 'Completed').length +
+                goalProjects.reduce((sum, p) => sum + (hierarchy.tasksByProject?.get(p.id)?.filter(t => t.status === 'Completed')?.length || 0), 0)
+
+              return (
+                <div key={g.id}>
+                  {/* Goal row */}
+                  <button
+                    onClick={() => toggleGoal(g.id)}
+                    className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
+                  >
+                    {expandedGoals.has(g.id) ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
+                    <Target className="w-4 h-4 text-purple-500" />
+                    <span className="font-medium text-gray-900 dark:text-white">{g.name}</span>
+                    <span className="text-xs text-gray-400">Goal</span>
+                    <span className="ml-auto text-xs text-gray-500">{completedTasks}/{totalTasks} tasks</span>
+                    {totalTasks > 0 && (
+                      <div className="w-20 h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                        <div className="h-full bg-green-500 rounded-full" style={{ width: `${totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0}%` }} />
+                      </div>
+                    )}
+                  </button>
+
+                  {expandedGoals.has(g.id) && (
+                    <div className="bg-gray-50/50 dark:bg-gray-800/20">
+                      {/* Projects under goal */}
+                      {goalProjects.map((p) => {
+                        const projTasks = hierarchy.tasksByProject?.get(p.id) || []
+                        const projIssues = hierarchy.issuesByProject?.get(p.id) || []
+                        return (
+                          <div key={p.id}>
+                            <button
+                              onClick={() => toggleProject(p.id)}
+                              className="w-full flex items-center gap-3 px-4 py-2 pl-10 hover:bg-gray-100 dark:hover:bg-gray-800/50"
+                            >
+                              {expandedProjects.has(p.id) ? <ChevronDown className="w-3.5 h-3.5 text-gray-400" /> : <ChevronRight className="w-3.5 h-3.5 text-gray-400" />}
+                              <FolderKanban className="w-4 h-4 text-blue-500" />
+                              <span className="text-sm font-medium text-gray-800 dark:text-gray-200">{p.name}</span>
+                              <span className="text-xs text-gray-400">Project</span>
+                              <span className="ml-auto text-xs text-gray-400">{projTasks.length} tasks, {projIssues.length} issues</span>
+                            </button>
+
+                            {expandedProjects.has(p.id) && (
+                              <div className="pl-16 space-y-0.5 py-1">
+                                {/* Tasks under project */}
+                                {projTasks.map((t) => (
+                                  <div key={t.id} className="flex items-center gap-2 px-4 py-1.5 text-sm">
+                                    <ListTodo className="w-3.5 h-3.5 text-orange-500" />
+                                    <span className="text-gray-700 dark:text-gray-300 truncate max-w-md">{t.message.slice(0, 80)}</span>
+                                    <span className={clsx('text-xs px-1.5 py-0.5 rounded-full ml-auto', statusColors[t.status] || statusColors.Pending)}>
+                                      {t.status}
+                                    </span>
+                                    <span className="text-xs text-gray-400">{t.agentName}</span>
+                                  </div>
+                                ))}
+                                {/* Issues under project */}
+                                {projIssues.map((i) => (
+                                  <div key={i.id} className="flex items-center gap-2 px-4 py-1 text-xs text-gray-500 dark:text-gray-400 pl-8">
+                                    <span className="w-1.5 h-1.5 bg-gray-400 rounded-full" />
+                                    <span className="truncate">{i.name}</span>
+                                    <span className={clsx('px-1.5 py-0.5 rounded-full ml-auto',
+                                      i.status === 'open' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400' :
+                                      i.status === 'in_progress' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' :
+                                      'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                                    )}>{i.status}</span>
+                                    {i.agentRef && <span className="text-gray-400">{i.agentRef}</span>}
+                                  </div>
+                                ))}
+                                {projTasks.length === 0 && projIssues.length === 0 && (
+                                  <p className="px-4 py-1 text-xs text-gray-400 italic">No tasks or issues</p>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+
+                      {/* Direct tasks under goal (no project) */}
+                      {goalTasks.map((t) => (
+                        <div key={t.id} className="flex items-center gap-2 px-4 py-1.5 pl-10 text-sm">
+                          <ListTodo className="w-3.5 h-3.5 text-orange-500" />
+                          <span className="text-gray-700 dark:text-gray-300 truncate max-w-md">{t.message.slice(0, 80)}</span>
+                          <span className={clsx('text-xs px-1.5 py-0.5 rounded-full ml-auto', statusColors[t.status])}>
+                            {t.status}
+                          </span>
+                        </div>
+                      ))}
+
+                      {goalProjects.length === 0 && goalTasks.length === 0 && (
+                        <p className="px-4 py-2 pl-10 text-sm text-gray-400 italic">No projects or tasks</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+
+            {/* Orphan tasks (no goal) */}
+            {hierarchy.orphanTasks && hierarchy.orphanTasks.length > 0 && (
+              <div>
+                <div className="px-4 py-3 flex items-center gap-3">
+                  <Bot className="w-4 h-4 text-gray-400" />
+                  <span className="font-medium text-gray-600 dark:text-gray-400">Standalone Tasks (no Goal)</span>
+                  <span className="text-xs text-gray-400 ml-auto">{hierarchy.orphanTasks.length} tasks</span>
+                </div>
+                <div className="pl-10 space-y-0.5 pb-2">
+                  {hierarchy.orphanTasks.slice(0, 20).map((t) => (
+                    <div key={t.id} className="flex items-center gap-2 px-4 py-1.5 text-sm">
+                      <ListTodo className="w-3.5 h-3.5 text-gray-400" />
+                      <span className="text-gray-600 dark:text-gray-400 truncate max-w-md">{t.message.slice(0, 80)}</span>
+                      <span className={clsx('text-xs px-1.5 py-0.5 rounded-full ml-auto', statusColors[t.status])}>
+                        {t.status}
+                      </span>
+                      <span className="text-xs text-gray-400">{t.agentName}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Summary */}
       <div className="flex gap-4 text-sm text-gray-500 dark:text-gray-400">
         <span>Showing {filteredTasks.length} of {tasks.length} tasks</span>
+        {viewMode === 'hierarchy' && <span>| {goals.length} goals, {projects.length} projects, {issues.length} issues</span>}
       </div>
     </div>
   )
