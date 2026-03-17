@@ -11,11 +11,11 @@ import type { Task, Goal, Project, Issue } from '@/types'
 
 const statusTabs = [
   { value: 'all', label: 'All' },
-  { value: 'Running', label: 'Running' },
-  { value: 'Completed', label: 'Completed' },
-  { value: 'Failed', label: 'Failed' },
-  { value: 'Pending', label: 'Pending' },
-  { value: 'Cancelled', label: 'Cancelled' },
+  { value: 'todo', label: 'Todo' },
+  { value: 'running', label: 'Running' },
+  { value: 'complete', label: 'Complete' },
+  { value: 'success', label: 'Success' },
+  { value: 'fail', label: 'Fail' },
 ]
 
 const statusColors: Record<string, string> = {
@@ -26,6 +26,26 @@ const statusColors: Record<string, string> = {
   Cancelled: 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-500',
 }
 
+// Map backend status to the new model: Todo / Running / Complete(Success|Fail)
+function getStatusGroup(status: string): string {
+  switch (status) {
+    case 'Pending': case 'Cancelled': return 'todo'
+    case 'Running': return 'running'
+    case 'Completed': return 'success'
+    case 'Failed': return 'fail'
+    default: return 'todo'
+  }
+}
+
+function getStatusLabel(status: string): string {
+  const group = getStatusGroup(status)
+  if (group === 'todo') return 'Todo'
+  if (group === 'running') return 'Running'
+  if (group === 'success') return 'Success'
+  if (group === 'fail') return 'Fail'
+  return status
+}
+
 export default function TasksPage() {
   const searchParams = useSearchParams()
   const initialStatus = searchParams.get('status') || 'all'
@@ -34,7 +54,7 @@ export default function TasksPage() {
   const [statusFilter, setStatusFilter] = useState<string>(initialStatus)
   const [agentFilter, setAgentFilter] = useState<string>('all')
   const [expandedTask, setExpandedTask] = useState<string | null>(null)
-  const [viewMode, setViewMode] = useState<'flat' | 'hierarchy'>('flat')
+  const [viewMode, setViewMode] = useState<'flat' | 'hierarchy' | 'goals' | 'projects' | 'tasks' | 'issues'>('flat')
   const [expandedGoals, setExpandedGoals] = useState<Set<string>>(new Set())
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set())
 
@@ -43,22 +63,24 @@ export default function TasksPage() {
     queryFn: fetchTasks,
   })
 
+  const needsHierarchy = viewMode !== 'flat'
+
   const { data: goals = [] } = useQuery({
     queryKey: ['goals'],
     queryFn: fetchGoals,
-    enabled: viewMode === 'hierarchy',
+    enabled: needsHierarchy,
   })
 
   const { data: projects = [] } = useQuery({
     queryKey: ['projects'],
     queryFn: fetchProjects,
-    enabled: viewMode === 'hierarchy',
+    enabled: needsHierarchy,
   })
 
   const { data: issues = [] } = useQuery({
     queryKey: ['issues'],
     queryFn: fetchIssues,
-    enabled: viewMode === 'hierarchy',
+    enabled: needsHierarchy,
   })
 
   // Build hierarchy: Goal → Projects → Tasks → Issues
@@ -111,9 +133,11 @@ export default function TasksPage() {
   }, [tasks])
 
   const statusCounts = useMemo(() => {
-    const counts: Record<string, number> = { all: tasks.length }
+    const counts: Record<string, number> = { all: tasks.length, todo: 0, running: 0, complete: 0, success: 0, fail: 0 }
     for (const task of tasks) {
-      counts[task.status] = (counts[task.status] || 0) + 1
+      const group = getStatusGroup(task.status)
+      counts[group] = (counts[group] || 0) + 1
+      if (group === 'success' || group === 'fail') counts.complete++
     }
     return counts
   }, [tasks])
@@ -125,8 +149,11 @@ export default function TasksPage() {
       task.agentName.toLowerCase().includes(search.toLowerCase()) ||
       task.id.toLowerCase().includes(search.toLowerCase())
 
+    const group = getStatusGroup(task.status)
     const matchesStatus =
-      statusFilter === 'all' || task.status === statusFilter
+      statusFilter === 'all' ||
+      statusFilter === group ||
+      (statusFilter === 'complete' && (group === 'success' || group === 'fail'))
 
     const matchesAgent =
       agentFilter === 'all' || task.agentName === agentFilter
@@ -145,23 +172,27 @@ export default function TasksPage() {
             View and manage task executions
           </p>
         </div>
-        <div className="flex gap-1 bg-gray-100 dark:bg-gray-800 rounded-lg p-1">
-          <button
-            onClick={() => setViewMode('flat')}
-            className={clsx('px-3 py-1.5 text-sm font-medium rounded-md transition-colors',
-              viewMode === 'flat' ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm' : 'text-gray-500'
-            )}
-          >
-            <ListTodo className="w-4 h-4 inline mr-1" />List
-          </button>
-          <button
-            onClick={() => setViewMode('hierarchy')}
-            className={clsx('px-3 py-1.5 text-sm font-medium rounded-md transition-colors',
-              viewMode === 'hierarchy' ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm' : 'text-gray-500'
-            )}
-          >
-            <GitBranch className="w-4 h-4 inline mr-1" />Hierarchy
-          </button>
+        <div className="flex gap-1 bg-gray-100 dark:bg-gray-800 rounded-lg p-1 overflow-x-auto">
+          {([
+            { value: 'flat', label: 'All Tasks', icon: ListTodo },
+            { value: 'hierarchy', label: 'Hierarchy', icon: GitBranch },
+            { value: 'goals', label: 'Goals', icon: Target },
+            { value: 'projects', label: 'Projects', icon: FolderKanban },
+            { value: 'issues', label: 'Issues', icon: Bot },
+          ] as const).map((tab) => {
+            const Icon = tab.icon
+            return (
+              <button
+                key={tab.value}
+                onClick={() => setViewMode(tab.value)}
+                className={clsx('flex items-center gap-1 px-3 py-1.5 text-sm font-medium rounded-md transition-colors whitespace-nowrap',
+                  viewMode === tab.value ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm' : 'text-gray-500'
+                )}
+              >
+                <Icon className="w-3.5 h-3.5" />{tab.label}
+              </button>
+            )
+          })}
         </div>
       </div>
 
@@ -269,7 +300,7 @@ export default function TasksPage() {
                       <td className="px-6 py-3 max-w-md truncate text-gray-600 dark:text-gray-300">{task.message}</td>
                       <td className="px-6 py-3">
                         <span className={clsx('px-2 py-0.5 rounded-full text-xs font-medium', statusColors[task.status] || statusColors.Pending)}>
-                          {task.status}
+                          {getStatusLabel(task.status)}
                         </span>
                       </td>
                       <td className="px-6 py-3 text-gray-600 dark:text-gray-300">${(task.cost || 0).toFixed(4)}</td>
@@ -302,7 +333,10 @@ export default function TasksPage() {
                                 </pre>
                               </div>
                             )}
-                            <div className="flex gap-6 text-xs text-gray-500 dark:text-gray-400">
+                            <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
+                              {task.goalId && <span className="text-purple-500">Goal: {task.goalId.slice(0, 8)}</span>}
+                              {task.projectId && <span className="text-blue-500">Project: {task.projectId.slice(0, 8)}</span>}
+                              {task.issueId && <span className="text-orange-500">Issue: {task.issueId.slice(0, 8)}</span>}
                               {task.tokensIn !== undefined && <span>Tokens In: {task.tokensIn?.toLocaleString()}</span>}
                               {task.tokensOut !== undefined && <span>Tokens Out: {task.tokensOut?.toLocaleString()}</span>}
                               {task.startedAt && <span>Started: {new Date(task.startedAt).toLocaleString()}</span>}
@@ -458,10 +492,125 @@ export default function TasksPage() {
         </div>
       )}
 
+      {/* Goals View */}
+      {viewMode === 'goals' && (
+        <div className="bg-white dark:bg-gray-900 rounded-xl shadow-sm border border-gray-200 dark:border-gray-800 divide-y divide-gray-100 dark:divide-gray-800">
+          {goals.length === 0 ? (
+            <p className="p-8 text-center text-gray-400">No goals found</p>
+          ) : goals.map((g) => {
+            const goalTasks = tasks.filter(t => t.goalId === g.id)
+            const completed = goalTasks.filter(t => t.status === 'Completed').length
+            const failed = goalTasks.filter(t => t.status === 'Failed').length
+            return (
+              <div key={g.id} className="p-4 hover:bg-gray-50 dark:hover:bg-gray-800/30">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <Target className="w-5 h-5 text-purple-500" />
+                    <div>
+                      <h3 className="font-medium text-gray-900 dark:text-white">{g.name}</h3>
+                      <p className="text-sm text-gray-500 truncate max-w-lg">{g.description}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-4 text-sm">
+                    <span className="text-gray-500">{goalTasks.length} tasks</span>
+                    {completed > 0 && <span className="text-green-600">{completed} success</span>}
+                    {failed > 0 && <span className="text-red-600">{failed} fail</span>}
+                    <span className={clsx('px-2 py-0.5 rounded-full text-xs', statusColors[g.status] || 'bg-gray-100 text-gray-600')}>{g.status}</span>
+                    {g.cost > 0 && <span className="text-gray-400">${g.cost.toFixed(4)}</span>}
+                  </div>
+                </div>
+                {goalTasks.length > 0 && (
+                  <div className="mt-2 w-full h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                    <div className="h-full flex">
+                      <div className="bg-green-500" style={{ width: `${goalTasks.length > 0 ? (completed / goalTasks.length) * 100 : 0}%` }} />
+                      <div className="bg-red-500" style={{ width: `${goalTasks.length > 0 ? (failed / goalTasks.length) * 100 : 0}%` }} />
+                    </div>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Projects View */}
+      {viewMode === 'projects' && (
+        <div className="bg-white dark:bg-gray-900 rounded-xl shadow-sm border border-gray-200 dark:border-gray-800 divide-y divide-gray-100 dark:divide-gray-800">
+          {projects.length === 0 ? (
+            <p className="p-8 text-center text-gray-400">No projects found</p>
+          ) : projects.map((p) => {
+            const projTasks = tasks.filter(t => t.projectId === p.id)
+            const projIssues = issues.filter(i => i.projectId === p.id)
+            const parentGoal = goals.find(g => g.id === p.goalId)
+            return (
+              <div key={p.id} className="p-4 hover:bg-gray-50 dark:hover:bg-gray-800/30">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <FolderKanban className="w-5 h-5 text-blue-500" />
+                    <div>
+                      <h3 className="font-medium text-gray-900 dark:text-white">{p.name}</h3>
+                      <p className="text-sm text-gray-500">{p.description}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-4 text-sm">
+                    {parentGoal && <span className="text-purple-500 text-xs">← {parentGoal.name}</span>}
+                    <span className="text-gray-500">{projTasks.length} tasks</span>
+                    <span className="text-gray-400">{projIssues.length} issues</span>
+                    <span className={clsx('px-2 py-0.5 rounded-full text-xs', statusColors[p.status] || 'bg-gray-100 text-gray-600')}>{p.status}</span>
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Issues View */}
+      {viewMode === 'issues' && (
+        <div className="bg-white dark:bg-gray-900 rounded-xl shadow-sm border border-gray-200 dark:border-gray-800 divide-y divide-gray-100 dark:divide-gray-800">
+          {issues.length === 0 ? (
+            <p className="p-8 text-center text-gray-400">No issues found</p>
+          ) : issues.map((i) => {
+            const parentProject = projects.find(p => p.id === i.projectId)
+            const parentGoal = parentProject ? goals.find(g => g.id === parentProject.goalId) : null
+            return (
+              <div key={i.id} className="p-3 hover:bg-gray-50 dark:hover:bg-gray-800/30">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <span className={clsx('w-2 h-2 rounded-full',
+                      i.status === 'open' ? 'bg-yellow-500' :
+                      i.status === 'in_progress' ? 'bg-blue-500' :
+                      i.status === 'closed' ? 'bg-green-500' : 'bg-gray-400'
+                    )} />
+                    <div>
+                      <span className="text-sm font-medium text-gray-900 dark:text-white">{i.name}</span>
+                      {i.description && <p className="text-xs text-gray-500 truncate max-w-lg">{i.description}</p>}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 text-xs">
+                    {parentGoal && <span className="text-purple-400">Goal: {parentGoal.name}</span>}
+                    {parentProject && <span className="text-blue-400">Proj: {parentProject.name}</span>}
+                    {i.agentRef && <span className="text-orange-400 flex items-center gap-1"><Bot className="w-3 h-3" />{i.agentRef}</span>}
+                    <span className={clsx('px-1.5 py-0.5 rounded-full',
+                      i.status === 'open' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400' :
+                      i.status === 'in_progress' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' :
+                      'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                    )}>{i.status}</span>
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
       {/* Summary */}
       <div className="flex gap-4 text-sm text-gray-500 dark:text-gray-400">
-        <span>Showing {filteredTasks.length} of {tasks.length} tasks</span>
-        {viewMode === 'hierarchy' && <span>| {goals.length} goals, {projects.length} projects, {issues.length} issues</span>}
+        {viewMode === 'flat' && <span>Showing {filteredTasks.length} of {tasks.length} tasks</span>}
+        {viewMode === 'goals' && <span>{goals.length} goals</span>}
+        {viewMode === 'projects' && <span>{projects.length} projects</span>}
+        {viewMode === 'issues' && <span>{issues.length} issues</span>}
+        {viewMode === 'hierarchy' && <span>{goals.length} goals, {projects.length} projects, {tasks.length} tasks, {issues.length} issues</span>}
       </div>
     </div>
   )
