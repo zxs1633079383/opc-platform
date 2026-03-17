@@ -28,9 +28,11 @@ type Server struct {
 	costMgr    *cost.Tracker
 	gateway    *gateway.Gateway
 	federation *federation.FederationController
-	logger     *zap.SugaredLogger
-	httpServer *http.Server
-	config     Config
+	logger       *zap.SugaredLogger
+	httpServer   *http.Server
+	config       Config
+	aiDecomposer *goal.AIDecomposer
+	retryQueue   *federation.RetryQueue
 }
 
 // Config holds server configuration.
@@ -56,18 +58,46 @@ func New(
 	if config.Host == "" {
 		config.Host = "127.0.0.1"
 	}
+	adapter := &controllerAdapter{ctrl: ctrl}
 	return &Server{
-		controller: ctrl,
-		costMgr:    costMgr,
-		gateway:    gw,
-		federation: fedCtrl,
-		logger:     logger,
-		config:     config,
+		controller:   ctrl,
+		costMgr:      costMgr,
+		gateway:      gw,
+		federation:   fedCtrl,
+		logger:       logger,
+		config:       config,
+		aiDecomposer: goal.NewAIDecomposer(adapter, logger),
+		retryQueue:   federation.NewRetryQueue(logger),
 	}
+}
+
+// controllerAdapter bridges controller.Controller to goal.AgentController interface.
+type controllerAdapter struct{ ctrl *controller.Controller }
+
+func (a *controllerAdapter) ExecuteTask(ctx context.Context, task v1.TaskRecord) (goal.ExecuteResult, error) {
+	result, err := a.ctrl.ExecuteTask(ctx, task)
+	if err != nil {
+		return goal.ExecuteResult{}, err
+	}
+	return goal.ExecuteResult{Output: result.Output, TokensIn: result.TokensIn, TokensOut: result.TokensOut}, nil
+}
+func (a *controllerAdapter) Apply(ctx context.Context, spec v1.AgentSpec) error {
+	return a.ctrl.Apply(ctx, spec)
+}
+func (a *controllerAdapter) StartAgent(ctx context.Context, name string) error {
+	return a.ctrl.StartAgent(ctx, name)
+}
+func (a *controllerAdapter) GetAgent(ctx context.Context, name string) (v1.AgentRecord, error) {
+	return a.ctrl.GetAgent(ctx, name)
 }
 
 // Start starts the HTTP server.
 func (s *Server) Start(ctx context.Context) error {
+	// Start retry queue for failed federation callbacks.
+	if s.retryQueue != nil {
+		go s.retryQueue.ProcessLoop(ctx)
+	}
+
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
 	router.Use(gin.Recovery())
@@ -165,6 +195,10 @@ func (s *Server) Start(ctx context.Context) error {
 		api.POST("/issues", s.createIssue)
 		api.PUT("/issues/:id", s.updateIssue)
 		api.DELETE("/issues/:id", s.deleteIssue)
+
+		// --- settings ---
+		api.GET("/settings", s.getSettings)
+		api.PUT("/settings", s.updateSettings)
 	}
 
 	addr := fmt.Sprintf("%s:%d", s.config.Host, s.config.Port)
@@ -1389,18 +1423,83 @@ func (s *Server) getGoal(c *gin.Context) {
 }
 
 func (s *Server) createGoal(c *gin.Context) {
-	var goal v1.GoalRecord
-	if err := c.ShouldBindJSON(&goal); err != nil {
+	var req struct {
+		v1.GoalRecord
+		AutoDecompose bool                     `json:"autoDecompose"`
+		Approval      string                   `json:"approval"`
+		Constraints   *v1.DecomposeConstraints `json:"constraints"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if goal.ID == "" { goal.ID = uuid.New().String() }
-	if goal.Status == "" { goal.Status = "active" }
-	if err := s.controller.Store().CreateGoal(c.Request.Context(), goal); err != nil {
+	g := req.GoalRecord
+	if g.ID == "" { g.ID = uuid.New().String() }
+	if g.Status == "" { g.Status = "active" }
+
+	ctx := c.Request.Context()
+
+	if req.AutoDecompose && s.aiDecomposer != nil {
+		g.Phase = v1.GoalPhaseDecomposing
+		g.Status = "decomposing"
+		if err := s.controller.Store().CreateGoal(ctx, g); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		// Async AI decomposition.
+		go func(goalRec v1.GoalRecord, approval string, constraints *v1.DecomposeConstraints) {
+			bgCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+			defer cancel()
+
+			if constraints != nil {
+				s.aiDecomposer.SetConstraints(constraints)
+			}
+
+			decompReq := goal.DecomposeRequest{
+				GoalID:      goalRec.ID,
+				GoalName:    goalRec.Name,
+				Description: goalRec.Description,
+			}
+			result, err := s.aiDecomposer.Decompose(bgCtx, decompReq)
+			if err != nil {
+				s.logger.Errorw("AI decomposition failed", "goalId", goalRec.ID, "error", err)
+				goalRec.Phase = v1.GoalPhaseFailed
+				goalRec.Status = "failed"
+				s.controller.Store().UpdateGoal(bgCtx, goalRec)
+				return
+			}
+
+			// Persist plan.
+			planJSON, _ := json.Marshal(result)
+			goalRec.DecompositionPlan = string(planJSON)
+
+			if approval == "auto" {
+				goalRec.Phase = v1.GoalPhaseInProgress
+				goalRec.Status = "in_progress"
+				s.controller.Store().UpdateGoal(bgCtx, goalRec)
+				s.logger.Infow("goal auto-approved", "goalId", goalRec.ID, "projects", len(result.Projects))
+			} else {
+				goalRec.Phase = v1.GoalPhasePlanned
+				goalRec.Status = "planned"
+				s.controller.Store().UpdateGoal(bgCtx, goalRec)
+				s.logger.Infow("goal planned, awaiting approval", "goalId", goalRec.ID, "projects", len(result.Projects))
+			}
+		}(g, req.Approval, req.Constraints)
+
+		c.JSON(http.StatusAccepted, gin.H{
+			"id": g.ID, "name": g.Name, "phase": "decomposing",
+			"message": "goal created, AI decomposition in progress",
+		})
+		return
+	}
+
+	// Non-autoDecompose: simple create.
+	if err := s.controller.Store().CreateGoal(ctx, g); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusCreated, goal)
+	c.JSON(http.StatusCreated, g)
 }
 
 func (s *Server) updateGoal(c *gin.Context) {
@@ -1636,4 +1735,38 @@ func (s *Server) getWorkflowRun(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, run)
+}
+
+// ---- settings ----
+
+func settingsDir() string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".opc")
+}
+
+func (s *Server) getSettings(c *gin.Context) {
+	data, err := os.ReadFile(filepath.Join(settingsDir(), "settings.json"))
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{})
+		return
+	}
+	var settings map[string]interface{}
+	json.Unmarshal(data, &settings)
+	c.JSON(http.StatusOK, settings)
+}
+
+func (s *Server) updateSettings(c *gin.Context) {
+	var settings map[string]interface{}
+	if err := c.ShouldBindJSON(&settings); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	dir := settingsDir()
+	os.MkdirAll(dir, 0700)
+	data, _ := json.MarshalIndent(settings, "", "  ")
+	if err := os.WriteFile(filepath.Join(dir, "settings.json"), data, 0600); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "settings saved"})
 }

@@ -286,3 +286,18 @@ export async function fetchIssues(): Promise<Issue[]> {
 export async function fetchWorkflowRuns(name: string): Promise<WorkflowRun[]> {
   return fetchJson<WorkflowRun[]>(`${API_BASE}/workflows/${name}/runs`)
 }
+
+// ---- Settings ----
+
+export async function fetchSettings(): Promise<Record<string, unknown>> {
+  return fetchJson<Record<string, unknown>>(`${API_BASE}/settings`)
+}
+
+export async function updateSettings(settings: Record<string, unknown>): Promise<void> {
+  const response = await fetch(`${API_BASE}/settings`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(settings),
+  })
+  if (!response.ok) throw new Error('Failed to save settings')
+}
