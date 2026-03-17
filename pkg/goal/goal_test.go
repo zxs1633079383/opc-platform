@@ -1,6 +1,7 @@
 package goal
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -134,7 +135,7 @@ func TestDecompose(t *testing.T) {
 		TargetCompanies: []string{"company-a", "company-b"},
 	}
 
-	result, err := d.Decompose(req)
+	result, err := d.Decompose(context.Background(), req)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -181,7 +182,7 @@ func TestDecompose(t *testing.T) {
 func TestDecompose_NoTargetCompanies(t *testing.T) {
 	d := NewDecomposer(newTestLogger())
 
-	_, err := d.Decompose(DecomposeRequest{
+	_, err := d.Decompose(context.Background(), DecomposeRequest{
 		GoalID:          "g1",
 		GoalName:        "Test",
 		TargetCompanies: []string{},
@@ -194,7 +195,7 @@ func TestDecompose_NoTargetCompanies(t *testing.T) {
 func TestDecompose_SingleCompany(t *testing.T) {
 	d := NewDecomposer(newTestLogger())
 
-	result, err := d.Decompose(DecomposeRequest{
+	result, err := d.Decompose(context.Background(), DecomposeRequest{
 		GoalID:          "g2",
 		GoalName:        "Deploy",
 		Description:     "Deploy to prod",
@@ -405,7 +406,7 @@ func TestDecomposeAndDispatch(t *testing.T) {
 	dispatcher := NewDispatcher(fc, newTestLogger())
 
 	// Decompose a goal.
-	result, err := decomposer.Decompose(DecomposeRequest{
+	result, err := decomposer.Decompose(context.Background(), DecomposeRequest{
 		GoalID:          "goal-1",
 		GoalName:        "Ship v1",
 		Description:     "Release first version",

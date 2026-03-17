@@ -1,20 +1,16 @@
 package goal
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
-// Decomposer breaks down a Goal into Projects, Tasks, and Issues.
-type Decomposer struct {
-	logger *zap.SugaredLogger
-}
-
-// NewDecomposer creates a new Decomposer.
-func NewDecomposer(logger *zap.SugaredLogger) *Decomposer {
-	return &Decomposer{logger: logger}
+// Decomposer defines the interface for goal decomposition strategies.
+type Decomposer interface {
+	Decompose(ctx context.Context, req DecomposeRequest) (*DecomposeResult, error)
 }
 
 // DecomposeRequest holds the parameters for goal decomposition.
@@ -30,10 +26,25 @@ type DecomposeResult struct {
 	Projects []*Project
 }
 
+// StaticDecomposer breaks down a Goal into Projects, Tasks, and Issues
+// using a deterministic, template-based approach (one project per company).
+type StaticDecomposer struct {
+	logger *zap.SugaredLogger
+}
+
+// NewStaticDecomposer creates a new StaticDecomposer.
+func NewStaticDecomposer(logger *zap.SugaredLogger) *StaticDecomposer {
+	return &StaticDecomposer{logger: logger}
+}
+
+// NewDecomposer creates a new StaticDecomposer (backward-compatible alias).
+func NewDecomposer(logger *zap.SugaredLogger) *StaticDecomposer {
+	return NewStaticDecomposer(logger)
+}
+
 // Decompose breaks a goal into projects (one per target company),
 // each containing a default task with a default issue.
-// In a future version, this will call an AI model for intelligent decomposition.
-func (d *Decomposer) Decompose(req DecomposeRequest) (*DecomposeResult, error) {
+func (d *StaticDecomposer) Decompose(ctx context.Context, req DecomposeRequest) (*DecomposeResult, error) {
 	if len(req.TargetCompanies) == 0 {
 		return nil, fmt.Errorf("no target companies specified")
 	}

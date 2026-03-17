@@ -79,6 +79,17 @@ func (s *sqliteStore) migrate() error {
 			FOREIGN KEY (workflow_name) REFERENCES workflows(name)
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_workflow_runs_name ON workflow_runs(workflow_name)`,
+		`CREATE TABLE IF NOT EXISTS goals (
+			id                  TEXT PRIMARY KEY,
+			name                TEXT NOT NULL,
+			description         TEXT NOT NULL DEFAULT '',
+			phase               TEXT NOT NULL DEFAULT 'active',
+			spec_yaml           TEXT NOT NULL DEFAULT '',
+			decomposition_plan  TEXT NOT NULL DEFAULT '',
+			decompose_cost      REAL NOT NULL DEFAULT 0,
+			created_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)`,
 	}
 
 	for _, m := range migrations {
@@ -86,6 +97,48 @@ func (s *sqliteStore) migrate() error {
 			return fmt.Errorf("exec migration: %w", err)
 		}
 	}
+
+	// Schema migrations for existing tables.
+	alterMigrations := []string{
+		"ALTER TABLE goals ADD COLUMN phase TEXT NOT NULL DEFAULT 'active'",
+		"ALTER TABLE goals ADD COLUMN spec_yaml TEXT NOT NULL DEFAULT ''",
+		"ALTER TABLE goals ADD COLUMN decomposition_plan TEXT NOT NULL DEFAULT ''",
+		"ALTER TABLE goals ADD COLUMN decompose_cost REAL NOT NULL DEFAULT 0",
+		"ALTER TABLE goals ADD COLUMN owner TEXT NOT NULL DEFAULT ''",
+		"ALTER TABLE goals ADD COLUMN deadline TEXT NOT NULL DEFAULT ''",
+		"ALTER TABLE goals ADD COLUMN status TEXT NOT NULL DEFAULT 'active'",
+		"ALTER TABLE goals ADD COLUMN tokens_in INTEGER NOT NULL DEFAULT 0",
+		"ALTER TABLE goals ADD COLUMN tokens_out INTEGER NOT NULL DEFAULT 0",
+		"ALTER TABLE goals ADD COLUMN cost REAL NOT NULL DEFAULT 0",
+	}
+	for _, m := range alterMigrations {
+		s.db.Exec(m) // Ignore errors (column already exists).
+	}
+
+	// Create projects and issues tables if missing.
+	extraTables := []string{
+		`CREATE TABLE IF NOT EXISTS projects (
+			id TEXT PRIMARY KEY, name TEXT NOT NULL, goal_id TEXT NOT NULL DEFAULT '',
+			description TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'active',
+			spec_yaml TEXT NOT NULL DEFAULT '', tokens_in INTEGER NOT NULL DEFAULT 0,
+			tokens_out INTEGER NOT NULL DEFAULT 0, cost REAL NOT NULL DEFAULT 0,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
+		`CREATE TABLE IF NOT EXISTS issues (
+			id TEXT PRIMARY KEY, name TEXT NOT NULL, project_id TEXT NOT NULL DEFAULT '',
+			description TEXT NOT NULL DEFAULT '', agent_ref TEXT NOT NULL DEFAULT '',
+			status TEXT NOT NULL DEFAULT 'open', spec_yaml TEXT NOT NULL DEFAULT '',
+			tokens_in INTEGER NOT NULL DEFAULT 0, tokens_out INTEGER NOT NULL DEFAULT 0,
+			cost REAL NOT NULL DEFAULT 0,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
+	}
+	for _, m := range extraTables {
+		if _, err := s.db.Exec(m); err != nil {
+			return fmt.Errorf("exec extra table migration: %w", err)
+		}
+	}
+
 	return nil
 }
 
@@ -384,6 +437,79 @@ func (s *sqliteStore) UpdateWorkflowRun(ctx context.Context, run v1.WorkflowRunR
 	return nil
 }
 
+// --- Goal operations ---
+
+func (s *sqliteStore) CreateGoal(ctx context.Context, goal v1.GoalRecord) error {
+	now := time.Now()
+	phase := string(goal.Phase)
+	if phase == "" { phase = "active" }
+	status := goal.Status
+	if status == "" { status = "active" }
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO goals (id, name, description, owner, deadline, status, phase, spec_yaml, decomposition_plan, decompose_cost, tokens_in, tokens_out, cost, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		goal.ID, goal.Name, goal.Description, goal.Owner, goal.Deadline, status, phase,
+		goal.SpecYAML, goal.DecompositionPlan, goal.DecomposeCost,
+		goal.TokensIn, goal.TokensOut, goal.Cost, now, now,
+	)
+	if err != nil {
+		return fmt.Errorf("create goal %q: %w", goal.ID, err)
+	}
+	return nil
+}
+
+func (s *sqliteStore) GetGoal(ctx context.Context, id string) (v1.GoalRecord, error) {
+	row := s.db.QueryRowContext(ctx,
+		`SELECT id, name, description, phase, spec_yaml, decomposition_plan, decompose_cost, created_at, updated_at
+		 FROM goals WHERE id = ?`, id,
+	)
+	var g v1.GoalRecord
+	var phase string
+	err := row.Scan(&g.ID, &g.Name, &g.Description, &phase, &g.SpecYAML,
+		&g.DecompositionPlan, &g.DecomposeCost, &g.CreatedAt, &g.UpdatedAt)
+	if err != nil {
+		return g, fmt.Errorf("get goal %q: %w", id, err)
+	}
+	g.Phase = v1.GoalPhase(phase)
+	return g, nil
+}
+
+func (s *sqliteStore) ListGoals(ctx context.Context) ([]v1.GoalRecord, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, name, description, phase, spec_yaml, decomposition_plan, decompose_cost, created_at, updated_at
+		 FROM goals ORDER BY created_at DESC`)
+	if err != nil {
+		return nil, fmt.Errorf("list goals: %w", err)
+	}
+	defer rows.Close()
+
+	var goals []v1.GoalRecord
+	for rows.Next() {
+		var g v1.GoalRecord
+		var phase string
+		if err := rows.Scan(&g.ID, &g.Name, &g.Description, &phase, &g.SpecYAML,
+			&g.DecompositionPlan, &g.DecomposeCost, &g.CreatedAt, &g.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("scan goal: %w", err)
+		}
+		g.Phase = v1.GoalPhase(phase)
+		goals = append(goals, g)
+	}
+	return goals, rows.Err()
+}
+
+func (s *sqliteStore) UpdateGoal(ctx context.Context, goal v1.GoalRecord) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE goals SET name=?, description=?, phase=?, spec_yaml=?, decomposition_plan=?, decompose_cost=?, updated_at=?
+		 WHERE id=?`,
+		goal.Name, goal.Description, string(goal.Phase), goal.SpecYAML,
+		goal.DecompositionPlan, goal.DecomposeCost, time.Now(), goal.ID,
+	)
+	if err != nil {
+		return fmt.Errorf("update goal %q: %w", goal.ID, err)
+	}
+	return nil
+}
+
 // --- scan helpers ---
 
 type scanner interface {
@@ -428,4 +554,141 @@ func scanTask(s scanner) (v1.TaskRecord, error) {
 
 func scanTaskRows(rows *sql.Rows) (v1.TaskRecord, error) {
 	return scanTask(rows)
+}
+
+// ---- Goal extended operations ----
+
+func (s *sqliteStore) DeleteGoal(ctx context.Context, id string) error {
+	_, err := s.db.ExecContext(ctx, "DELETE FROM goals WHERE id = ?", id)
+	return err
+}
+
+func (s *sqliteStore) GoalStats(ctx context.Context, goalID string) (v1.HierarchyStats, error) {
+	var stats v1.HierarchyStats
+	row := s.db.QueryRowContext(ctx, `
+		SELECT COALESCE(SUM(tokens_in),0), COALESCE(SUM(tokens_out),0), COALESCE(SUM(cost),0),
+		       COUNT(*), COALESCE(SUM(CASE WHEN status='Completed' THEN 1 ELSE 0 END),0),
+		       COALESCE(SUM(CASE WHEN status='Failed' THEN 1 ELSE 0 END),0)
+		FROM tasks WHERE goal_id = ?`, goalID)
+	err := row.Scan(&stats.TotalTokensIn, &stats.TotalTokensOut, &stats.TotalCost,
+		&stats.TaskCount, &stats.CompletedTasks, &stats.FailedTasks)
+	return stats, err
+}
+
+// ---- Project operations ----
+
+func (s *sqliteStore) CreateProject(ctx context.Context, p v1.ProjectRecord) error {
+	now := time.Now()
+	_, err := s.db.ExecContext(ctx, `INSERT INTO projects (id, name, goal_id, description, status, spec_yaml, tokens_in, tokens_out, cost, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, 0, 0, 0, ?, ?)`, p.ID, p.Name, p.GoalID, p.Description, p.Status, p.SpecYAML, now, now)
+	return err
+}
+
+func (s *sqliteStore) GetProject(ctx context.Context, id string) (v1.ProjectRecord, error) {
+	var p v1.ProjectRecord
+	err := s.db.QueryRowContext(ctx, `SELECT id, name, goal_id, description, status, COALESCE(spec_yaml,''), tokens_in, tokens_out, cost, created_at, updated_at FROM projects WHERE id = ?`, id).
+		Scan(&p.ID, &p.Name, &p.GoalID, &p.Description, &p.Status, &p.SpecYAML, &p.TokensIn, &p.TokensOut, &p.Cost, &p.CreatedAt, &p.UpdatedAt)
+	return p, err
+}
+
+func (s *sqliteStore) ListProjects(ctx context.Context) ([]v1.ProjectRecord, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id, name, goal_id, description, status, COALESCE(spec_yaml,''), tokens_in, tokens_out, cost, created_at, updated_at FROM projects ORDER BY created_at DESC`)
+	if err != nil { return nil, err }
+	defer rows.Close()
+	var result []v1.ProjectRecord
+	for rows.Next() {
+		var p v1.ProjectRecord
+		if err := rows.Scan(&p.ID, &p.Name, &p.GoalID, &p.Description, &p.Status, &p.SpecYAML, &p.TokensIn, &p.TokensOut, &p.Cost, &p.CreatedAt, &p.UpdatedAt); err != nil { continue }
+		result = append(result, p)
+	}
+	return result, nil
+}
+
+func (s *sqliteStore) ListProjectsByGoal(ctx context.Context, goalID string) ([]v1.ProjectRecord, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id, name, goal_id, description, status, COALESCE(spec_yaml,''), tokens_in, tokens_out, cost, created_at, updated_at FROM projects WHERE goal_id = ? ORDER BY created_at`, goalID)
+	if err != nil { return nil, err }
+	defer rows.Close()
+	var result []v1.ProjectRecord
+	for rows.Next() {
+		var p v1.ProjectRecord
+		if err := rows.Scan(&p.ID, &p.Name, &p.GoalID, &p.Description, &p.Status, &p.SpecYAML, &p.TokensIn, &p.TokensOut, &p.Cost, &p.CreatedAt, &p.UpdatedAt); err != nil { continue }
+		result = append(result, p)
+	}
+	return result, nil
+}
+
+func (s *sqliteStore) UpdateProject(ctx context.Context, p v1.ProjectRecord) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE projects SET name=?, description=?, status=?, tokens_in=?, tokens_out=?, cost=?, updated_at=? WHERE id=?`,
+		p.Name, p.Description, p.Status, p.TokensIn, p.TokensOut, p.Cost, time.Now(), p.ID)
+	return err
+}
+
+func (s *sqliteStore) DeleteProject(ctx context.Context, id string) error {
+	_, err := s.db.ExecContext(ctx, "DELETE FROM projects WHERE id = ?", id)
+	return err
+}
+
+func (s *sqliteStore) ProjectStats(ctx context.Context, projectID string) (v1.HierarchyStats, error) {
+	var stats v1.HierarchyStats
+	row := s.db.QueryRowContext(ctx, `
+		SELECT COALESCE(SUM(tokens_in),0), COALESCE(SUM(tokens_out),0), COALESCE(SUM(cost),0),
+		       COUNT(*), COALESCE(SUM(CASE WHEN status='Completed' THEN 1 ELSE 0 END),0),
+		       COALESCE(SUM(CASE WHEN status='Failed' THEN 1 ELSE 0 END),0)
+		FROM tasks WHERE project_id = ?`, projectID)
+	err := row.Scan(&stats.TotalTokensIn, &stats.TotalTokensOut, &stats.TotalCost,
+		&stats.TaskCount, &stats.CompletedTasks, &stats.FailedTasks)
+	return stats, err
+}
+
+// ---- Issue operations ----
+
+func (s *sqliteStore) CreateIssue(ctx context.Context, i v1.IssueRecord) error {
+	now := time.Now()
+	_, err := s.db.ExecContext(ctx, `INSERT INTO issues (id, name, project_id, description, agent_ref, status, spec_yaml, tokens_in, tokens_out, cost, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?, ?)`, i.ID, i.Name, i.ProjectID, i.Description, i.AgentRef, i.Status, i.SpecYAML, now, now)
+	return err
+}
+
+func (s *sqliteStore) GetIssue(ctx context.Context, id string) (v1.IssueRecord, error) {
+	var i v1.IssueRecord
+	err := s.db.QueryRowContext(ctx, `SELECT id, name, project_id, description, COALESCE(agent_ref,''), status, COALESCE(spec_yaml,''), tokens_in, tokens_out, cost, created_at, updated_at FROM issues WHERE id = ?`, id).
+		Scan(&i.ID, &i.Name, &i.ProjectID, &i.Description, &i.AgentRef, &i.Status, &i.SpecYAML, &i.TokensIn, &i.TokensOut, &i.Cost, &i.CreatedAt, &i.UpdatedAt)
+	return i, err
+}
+
+func (s *sqliteStore) ListIssues(ctx context.Context) ([]v1.IssueRecord, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id, name, project_id, description, COALESCE(agent_ref,''), status, COALESCE(spec_yaml,''), tokens_in, tokens_out, cost, created_at, updated_at FROM issues ORDER BY created_at DESC`)
+	if err != nil { return nil, err }
+	defer rows.Close()
+	var result []v1.IssueRecord
+	for rows.Next() {
+		var i v1.IssueRecord
+		if err := rows.Scan(&i.ID, &i.Name, &i.ProjectID, &i.Description, &i.AgentRef, &i.Status, &i.SpecYAML, &i.TokensIn, &i.TokensOut, &i.Cost, &i.CreatedAt, &i.UpdatedAt); err != nil { continue }
+		result = append(result, i)
+	}
+	return result, nil
+}
+
+func (s *sqliteStore) ListIssuesByProject(ctx context.Context, projectID string) ([]v1.IssueRecord, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id, name, project_id, description, COALESCE(agent_ref,''), status, COALESCE(spec_yaml,''), tokens_in, tokens_out, cost, created_at, updated_at FROM issues WHERE project_id = ? ORDER BY created_at`, projectID)
+	if err != nil { return nil, err }
+	defer rows.Close()
+	var result []v1.IssueRecord
+	for rows.Next() {
+		var i v1.IssueRecord
+		if err := rows.Scan(&i.ID, &i.Name, &i.ProjectID, &i.Description, &i.AgentRef, &i.Status, &i.SpecYAML, &i.TokensIn, &i.TokensOut, &i.Cost, &i.CreatedAt, &i.UpdatedAt); err != nil { continue }
+		result = append(result, i)
+	}
+	return result, nil
+}
+
+func (s *sqliteStore) UpdateIssue(ctx context.Context, i v1.IssueRecord) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE issues SET name=?, description=?, agent_ref=?, status=?, tokens_in=?, tokens_out=?, cost=?, updated_at=? WHERE id=?`,
+		i.Name, i.Description, i.AgentRef, i.Status, i.TokensIn, i.TokensOut, i.Cost, time.Now(), i.ID)
+	return err
+}
+
+func (s *sqliteStore) DeleteIssue(ctx context.Context, id string) error {
+	_, err := s.db.ExecContext(ctx, "DELETE FROM issues WHERE id = ?", id)
+	return err
 }

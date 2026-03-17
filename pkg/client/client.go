@@ -95,10 +95,10 @@ func checkResponse(resp *http.Response) ([]byte, error) {
 	return respBody, nil
 }
 
-// doJSON executes an HTTP request with optional JSON body and decodes the JSON response.
+// DoJSON executes an HTTP request with optional JSON body and decodes the JSON response.
 // If body is non-nil, it is marshalled to JSON and sent as the request body.
 // If result is non-nil, the response body is decoded into it.
-func (c *Client) doJSON(ctx context.Context, method, path string, body interface{}, result interface{}) error {
+func (c *Client) DoJSON(ctx context.Context, method, path string, body interface{}, result interface{}) error {
 	var bodyReader io.Reader
 	var contentType string
 
@@ -175,7 +175,7 @@ func (c *Client) Apply(ctx context.Context, yamlData []byte) (string, error) {
 // ListAgents returns all agents.
 func (c *Client) ListAgents(ctx context.Context) ([]v1.AgentRecord, error) {
 	var agents []v1.AgentRecord
-	if err := c.doJSON(ctx, http.MethodGet, "/api/agents", nil, &agents); err != nil {
+	if err := c.DoJSON(ctx, http.MethodGet, "/api/agents", nil, &agents); err != nil {
 		return nil, err
 	}
 	return agents, nil
@@ -184,7 +184,7 @@ func (c *Client) ListAgents(ctx context.Context) ([]v1.AgentRecord, error) {
 // GetAgent returns a single agent by name.
 func (c *Client) GetAgent(ctx context.Context, name string) (v1.AgentRecord, error) {
 	var agent v1.AgentRecord
-	if err := c.doJSON(ctx, http.MethodGet, "/api/agents/"+name, nil, &agent); err != nil {
+	if err := c.DoJSON(ctx, http.MethodGet, "/api/agents/"+name, nil, &agent); err != nil {
 		return v1.AgentRecord{}, err
 	}
 	return agent, nil
@@ -192,22 +192,22 @@ func (c *Client) GetAgent(ctx context.Context, name string) (v1.AgentRecord, err
 
 // DeleteAgent deletes an agent by name.
 func (c *Client) DeleteAgent(ctx context.Context, name string) error {
-	return c.doJSON(ctx, http.MethodDelete, "/api/agents/"+name, nil, nil)
+	return c.DoJSON(ctx, http.MethodDelete, "/api/agents/"+name, nil, nil)
 }
 
 // StartAgent starts an agent by name.
 func (c *Client) StartAgent(ctx context.Context, name string) error {
-	return c.doJSON(ctx, http.MethodPost, "/api/agents/"+name+"/start", nil, nil)
+	return c.DoJSON(ctx, http.MethodPost, "/api/agents/"+name+"/start", nil, nil)
 }
 
 // StopAgent stops an agent by name.
 func (c *Client) StopAgent(ctx context.Context, name string) error {
-	return c.doJSON(ctx, http.MethodPost, "/api/agents/"+name+"/stop", nil, nil)
+	return c.DoJSON(ctx, http.MethodPost, "/api/agents/"+name+"/stop", nil, nil)
 }
 
 // RestartAgent restarts an agent by name.
 func (c *Client) RestartAgent(ctx context.Context, name string) error {
-	return c.doJSON(ctx, http.MethodPost, "/api/agents/"+name+"/restart", nil, nil)
+	return c.DoJSON(ctx, http.MethodPost, "/api/agents/"+name+"/restart", nil, nil)
 }
 
 // RunTask executes a task on the specified agent. Returns the task ID and output.
@@ -218,7 +218,7 @@ func (c *Client) RunTask(ctx context.Context, agentName, message string) (taskID
 	}
 
 	var result runTaskResponse
-	if err := c.doJSON(ctx, http.MethodPost, "/api/run", reqBody, &result); err != nil {
+	if err := c.DoJSON(ctx, http.MethodPost, "/api/run", reqBody, &result); err != nil {
 		return "", "", err
 	}
 
@@ -228,7 +228,7 @@ func (c *Client) RunTask(ctx context.Context, agentName, message string) (taskID
 // ListTasks returns all tasks.
 func (c *Client) ListTasks(ctx context.Context) ([]v1.TaskRecord, error) {
 	var tasks []v1.TaskRecord
-	if err := c.doJSON(ctx, http.MethodGet, "/api/tasks", nil, &tasks); err != nil {
+	if err := c.DoJSON(ctx, http.MethodGet, "/api/tasks", nil, &tasks); err != nil {
 		return nil, err
 	}
 	return tasks, nil
@@ -237,7 +237,7 @@ func (c *Client) ListTasks(ctx context.Context) ([]v1.TaskRecord, error) {
 // GetTask returns a single task by ID.
 func (c *Client) GetTask(ctx context.Context, id string) (v1.TaskRecord, error) {
 	var task v1.TaskRecord
-	if err := c.doJSON(ctx, http.MethodGet, "/api/tasks/"+id, nil, &task); err != nil {
+	if err := c.DoJSON(ctx, http.MethodGet, "/api/tasks/"+id, nil, &task); err != nil {
 		return v1.TaskRecord{}, err
 	}
 	return task, nil
@@ -246,7 +246,7 @@ func (c *Client) GetTask(ctx context.Context, id string) (v1.TaskRecord, error) 
 // ListWorkflows returns all workflows.
 func (c *Client) ListWorkflows(ctx context.Context) ([]v1.WorkflowRecord, error) {
 	var workflows []v1.WorkflowRecord
-	if err := c.doJSON(ctx, http.MethodGet, "/api/workflows", nil, &workflows); err != nil {
+	if err := c.DoJSON(ctx, http.MethodGet, "/api/workflows", nil, &workflows); err != nil {
 		return nil, err
 	}
 	return workflows, nil
@@ -254,13 +254,13 @@ func (c *Client) ListWorkflows(ctx context.Context) ([]v1.WorkflowRecord, error)
 
 // DeleteWorkflow deletes a workflow by name.
 func (c *Client) DeleteWorkflow(ctx context.Context, name string) error {
-	return c.doJSON(ctx, http.MethodDelete, "/api/workflows/"+name, nil, nil)
+	return c.DoJSON(ctx, http.MethodDelete, "/api/workflows/"+name, nil, nil)
 }
 
 // Status returns the cluster status summary.
 func (c *Client) Status(ctx context.Context) (map[string]interface{}, error) {
 	var status map[string]interface{}
-	if err := c.doJSON(ctx, http.MethodGet, "/api/status", nil, &status); err != nil {
+	if err := c.DoJSON(ctx, http.MethodGet, "/api/status", nil, &status); err != nil {
 		return nil, err
 	}
 	return status, nil
@@ -269,7 +269,7 @@ func (c *Client) Status(ctx context.Context) (map[string]interface{}, error) {
 // AgentMetrics returns metrics for all agents.
 func (c *Client) AgentMetrics(ctx context.Context) (map[string]v1.AgentMetrics, error) {
 	var metrics map[string]v1.AgentMetrics
-	if err := c.doJSON(ctx, http.MethodGet, "/api/metrics/agents", nil, &metrics); err != nil {
+	if err := c.DoJSON(ctx, http.MethodGet, "/api/metrics/agents", nil, &metrics); err != nil {
 		return nil, err
 	}
 	return metrics, nil
@@ -278,7 +278,7 @@ func (c *Client) AgentMetrics(ctx context.Context) (map[string]v1.AgentMetrics, 
 // Health returns the health status for all agents.
 func (c *Client) Health(ctx context.Context) (map[string]v1.HealthStatus, error) {
 	var health map[string]v1.HealthStatus
-	if err := c.doJSON(ctx, http.MethodGet, "/api/health", nil, &health); err != nil {
+	if err := c.DoJSON(ctx, http.MethodGet, "/api/health", nil, &health); err != nil {
 		return nil, err
 	}
 	return health, nil

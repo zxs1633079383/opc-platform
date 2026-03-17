@@ -175,10 +175,86 @@ type TaskRecord struct {
 	TokensIn  int        `json:"tokensIn,omitempty"`
 	TokensOut int        `json:"tokensOut,omitempty"`
 	Cost      float64    `json:"cost,omitempty"`
+	IssueID   string     `json:"issueId,omitempty"`
+	ProjectID string     `json:"projectId,omitempty"`
+	GoalID    string     `json:"goalId,omitempty"`
 	CreatedAt time.Time  `json:"createdAt"`
 	UpdatedAt time.Time  `json:"updatedAt"`
 	StartedAt *time.Time `json:"startedAt,omitempty"`
 	EndedAt   *time.Time `json:"endedAt,omitempty"`
+}
+
+// GoalPhase represents the lifecycle phase of a goal with AI decomposition.
+type GoalPhase string
+
+const (
+	GoalPhaseActive       GoalPhase = "active"        // Manual decomposition or no decomposition.
+	GoalPhaseDecomposing  GoalPhase = "decomposing"    // AI is generating the decomposition plan.
+	GoalPhasePlanned      GoalPhase = "planned"        // AI decomposition complete, awaiting approval.
+	GoalPhaseApproved     GoalPhase = "approved"       // User approved, executing.
+	GoalPhaseInProgress   GoalPhase = "in_progress"    // Tasks are running.
+	GoalPhaseCompleted    GoalPhase = "completed"      // All tasks done.
+	GoalPhaseFailed       GoalPhase = "failed"         // Decomposition or execution failed.
+)
+
+// GoalRecord represents a persisted goal.
+type GoalRecord struct {
+	ID                string    `json:"id"`
+	Name              string    `json:"name"`
+	Description       string    `json:"description"`
+	Owner             string    `json:"owner,omitempty"`
+	Deadline          string    `json:"deadline,omitempty"`
+	Status            string    `json:"status"`
+	Phase             GoalPhase `json:"phase,omitempty"`
+	SpecYAML          string    `json:"specYaml,omitempty"`
+	DecompositionPlan string    `json:"decompositionPlan,omitempty"` // JSON of AI-generated plan.
+	DecomposeCost     float64   `json:"decomposeCost,omitempty"`    // Cost of the decomposition itself.
+	TokensIn          int       `json:"tokensIn"`
+	TokensOut         int       `json:"tokensOut"`
+	Cost              float64   `json:"cost"`
+	CreatedAt         time.Time `json:"createdAt"`
+	UpdatedAt         time.Time `json:"updatedAt"`
+}
+
+// ProjectRecord represents a persisted project.
+type ProjectRecord struct {
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	GoalID      string    `json:"goalId"`
+	Description string    `json:"description"`
+	Status      string    `json:"status"`
+	SpecYAML    string    `json:"specYaml,omitempty"`
+	TokensIn    int       `json:"tokensIn"`
+	TokensOut   int       `json:"tokensOut"`
+	Cost        float64   `json:"cost"`
+	CreatedAt   time.Time `json:"createdAt"`
+	UpdatedAt   time.Time `json:"updatedAt"`
+}
+
+// IssueRecord represents a persisted issue.
+type IssueRecord struct {
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	ProjectID   string    `json:"projectId"`
+	Description string    `json:"description"`
+	AgentRef    string    `json:"agentRef,omitempty"`
+	Status      string    `json:"status"`
+	SpecYAML    string    `json:"specYaml,omitempty"`
+	TokensIn    int       `json:"tokensIn"`
+	TokensOut   int       `json:"tokensOut"`
+	Cost        float64   `json:"cost"`
+	CreatedAt   time.Time `json:"createdAt"`
+	UpdatedAt   time.Time `json:"updatedAt"`
+}
+
+// HierarchyStats holds aggregated token/cost stats for a goal or project.
+type HierarchyStats struct {
+	TotalTokensIn  int     `json:"totalTokensIn"`
+	TotalTokensOut int     `json:"totalTokensOut"`
+	TotalCost      float64 `json:"totalCost"`
+	TaskCount      int     `json:"taskCount"`
+	CompletedTasks int     `json:"completedTasks"`
+	FailedTasks    int     `json:"failedTasks"`
 }
 
 // AgentRecord represents a persisted agent record.
@@ -229,11 +305,28 @@ type GoalSpec struct {
 
 // GoalBody contains the spec fields for a Goal.
 type GoalBody struct {
-	Description     string            `yaml:"description" json:"description"`
-	Owner           string            `yaml:"owner,omitempty" json:"owner,omitempty"`
-	Deadline        string            `yaml:"deadline,omitempty" json:"deadline,omitempty"`
+	Description     string             `yaml:"description" json:"description"`
+	Owner           string             `yaml:"owner,omitempty" json:"owner,omitempty"`
+	Deadline        string             `yaml:"deadline,omitempty" json:"deadline,omitempty"`
 	SuccessCriteria []SuccessCriterion `yaml:"successCriteria,omitempty" json:"successCriteria,omitempty"`
-	Budget          BudgetConfig      `yaml:"budget,omitempty" json:"budget,omitempty"`
+	Budget          BudgetConfig       `yaml:"budget,omitempty" json:"budget,omitempty"`
+
+	// AI auto-decomposition fields.
+	AutoDecompose bool                  `yaml:"autoDecompose,omitempty" json:"autoDecompose,omitempty"`
+	Approval      string               `yaml:"approval,omitempty" json:"approval,omitempty"` // "required" | "auto"
+	Constraints   *DecomposeConstraints `yaml:"constraints,omitempty" json:"constraints,omitempty"`
+
+	// Federation company mapping for cross-company dispatch.
+	CompanyMapping map[string]string `yaml:"companyMapping,omitempty" json:"companyMapping,omitempty"`
+}
+
+// DecomposeConstraints defines guardrails for AI goal decomposition.
+type DecomposeConstraints struct {
+	MaxProjects        int      `yaml:"maxProjects,omitempty" json:"maxProjects,omitempty"`
+	MaxTasksPerProject int      `yaml:"maxTasksPerProject,omitempty" json:"maxTasksPerProject,omitempty"`
+	MaxAgents          int      `yaml:"maxAgents,omitempty" json:"maxAgents,omitempty"`
+	MaxBudget          string   `yaml:"maxBudget,omitempty" json:"maxBudget,omitempty"`
+	PreferredAgentTypes []string `yaml:"preferredAgentTypes,omitempty" json:"preferredAgentTypes,omitempty"`
 }
 
 // SuccessCriterion defines a measurable success metric.

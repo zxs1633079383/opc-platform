@@ -1,6 +1,9 @@
 package main
 
 import (
+	"bytes"
+	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -9,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
+	"github.com/zlc-ai/opc-platform/pkg/client"
 	"github.com/zlc-ai/opc-platform/pkg/federation"
 	"github.com/zlc-ai/opc-platform/pkg/goal"
 )
@@ -27,23 +31,40 @@ var goalCreateCmd = &cobra.Command{
 }
 
 var (
-	goalCreateName        string
-	goalCreateDescription string
-	goalCreateCompanies   string
+	goalCreateName             string
+	goalCreateDescription      string
+	goalCreateCompanies        string
+	goalCreateAutoDecompose    bool
+	goalCreateAutoApprove      bool
+	goalMaxCost                int
+	goalMaxAgents              int
+	goalMaxTasks               int
+	goalReviseFile             string
 )
 
 func init() {
 	goalCreateCmd.Flags().StringVar(&goalCreateName, "name", "", "goal name (required)")
 	goalCreateCmd.Flags().StringVar(&goalCreateDescription, "description", "", "goal description")
 	goalCreateCmd.Flags().StringVar(&goalCreateCompanies, "companies", "", "target company IDs, comma-separated (required)")
+	goalCreateCmd.Flags().BoolVar(&goalCreateAutoDecompose, "auto-decompose", false, "enable AI auto-decomposition")
+	goalCreateCmd.Flags().BoolVar(&goalCreateAutoApprove, "auto-approve", false, "auto-approve after decomposition")
+	goalCreateCmd.Flags().IntVar(&goalMaxCost, "max-cost", 0, "max cost in dollars")
+	goalCreateCmd.Flags().IntVar(&goalMaxAgents, "max-agents", 0, "max number of agents")
+	goalCreateCmd.Flags().IntVar(&goalMaxTasks, "max-tasks", 0, "max number of tasks per project")
 	goalCreateCmd.MarkFlagRequired("name")
 	goalCreateCmd.MarkFlagRequired("companies")
+
+	goalReviseCmd.Flags().StringVar(&goalReviseFile, "file", "", "path to revised plan JSON file (required)")
+	goalReviseCmd.MarkFlagRequired("file")
 
 	goalCmd.AddCommand(goalCreateCmd)
 	goalCmd.AddCommand(goalListCmd)
 	goalCmd.AddCommand(goalStatusCmd)
 	goalCmd.AddCommand(goalTraceCmd)
 	goalCmd.AddCommand(goalInterveneCmd)
+	goalCmd.AddCommand(goalPlanCmd)
+	goalCmd.AddCommand(goalApproveCmd)
+	goalCmd.AddCommand(goalReviseCmd)
 
 	rootCmd.AddCommand(goalCmd)
 }
@@ -56,10 +77,15 @@ func runGoalCreate(cmd *cobra.Command, args []string) error {
 		companies[i] = strings.TrimSpace(companies[i])
 	}
 
+	// If auto-decompose is enabled, delegate to the daemon API.
+	if goalCreateAutoDecompose {
+		return runGoalCreateViaDaemon(cmd.Context())
+	}
+
 	goalID := uuid.New().String()[:8]
 
 	decomposer := goal.NewDecomposer(logger)
-	result, err := decomposer.Decompose(goal.DecomposeRequest{
+	result, err := decomposer.Decompose(cmd.Context(), goal.DecomposeRequest{
 		GoalID:          goalID,
 		GoalName:        goalCreateName,
 		Description:     goalCreateDescription,
@@ -88,6 +114,45 @@ func runGoalCreate(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("Goal created: id=%s name=%s companies=%v projects=%d\n",
 		g.ID, g.Name, g.TargetCompanies, len(g.Projects))
+	return nil
+}
+
+func runGoalCreateViaDaemon(ctx context.Context) error {
+	c := client.New(daemonAddr())
+
+	approval := "required"
+	if goalCreateAutoApprove {
+		approval = "auto"
+	}
+
+	req := map[string]interface{}{
+		"name":          goalCreateName,
+		"description":   goalCreateDescription,
+		"autoDecompose": true,
+		"approval":      approval,
+	}
+
+	if goalMaxCost > 0 || goalMaxAgents > 0 || goalMaxTasks > 0 {
+		constraints := map[string]int{}
+		if goalMaxCost > 0 {
+			constraints["maxCostDollars"] = goalMaxCost
+		}
+		if goalMaxAgents > 0 {
+			constraints["maxAgents"] = goalMaxAgents
+		}
+		if goalMaxTasks > 0 {
+			constraints["maxTasksPerProject"] = goalMaxTasks
+		}
+		req["constraints"] = constraints
+	}
+
+	var result map[string]interface{}
+	if err := c.DoJSON(ctx, "POST", "/api/goals", req, &result); err != nil {
+		return fmt.Errorf("create goal via daemon: %w", err)
+	}
+
+	data, _ := json.MarshalIndent(result, "", "  ")
+	fmt.Println(string(data))
 	return nil
 }
 
@@ -245,4 +310,97 @@ func runGoalIntervene(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+// --- plan subcommand ---
+
+var goalPlanCmd = &cobra.Command{
+	Use:   "plan [goal-id]",
+	Short: "Show the decomposition plan for a goal",
+	Args:  cobra.ExactArgs(1),
+	RunE:  runGoalPlan,
+}
+
+func runGoalPlan(cmd *cobra.Command, args []string) error {
+	c := client.New(daemonAddr())
+
+	var result json.RawMessage
+	if err := c.DoJSON(cmd.Context(), "GET", "/api/goals/"+args[0]+"/plan", nil, &result); err != nil {
+		return fmt.Errorf("get goal plan: %w", err)
+	}
+
+	// Pretty-print the plan.
+	var pretty bytes.Buffer
+	if err := json.Indent(&pretty, result, "", "  "); err != nil {
+		fmt.Println(string(result))
+		return nil
+	}
+	fmt.Println(pretty.String())
+	return nil
+}
+
+// --- approve subcommand ---
+
+var goalApproveCmd = &cobra.Command{
+	Use:   "approve [goal-id]",
+	Short: "Approve a planned goal for execution",
+	Args:  cobra.ExactArgs(1),
+	RunE:  runGoalApprove,
+}
+
+func runGoalApprove(cmd *cobra.Command, args []string) error {
+	c := client.New(daemonAddr())
+
+	var result map[string]interface{}
+	if err := c.DoJSON(cmd.Context(), "POST", "/api/goals/"+args[0]+"/approve", nil, &result); err != nil {
+		return fmt.Errorf("approve goal: %w", err)
+	}
+
+	data, _ := json.MarshalIndent(result, "", "  ")
+	fmt.Println(string(data))
+	return nil
+}
+
+// --- revise subcommand ---
+
+var goalReviseCmd = &cobra.Command{
+	Use:   "revise [goal-id]",
+	Short: "Revise the decomposition plan for a goal",
+	Args:  cobra.ExactArgs(1),
+	RunE:  runGoalRevise,
+}
+
+func runGoalRevise(cmd *cobra.Command, args []string) error {
+	c := client.New(daemonAddr())
+
+	planData, err := os.ReadFile(goalReviseFile)
+	if err != nil {
+		return fmt.Errorf("read plan file: %w", err)
+	}
+
+	var plan json.RawMessage
+	if err := json.Unmarshal(planData, &plan); err != nil {
+		return fmt.Errorf("parse plan JSON: %w", err)
+	}
+
+	req := map[string]interface{}{
+		"plan": plan,
+	}
+
+	var result map[string]interface{}
+	if err := c.DoJSON(cmd.Context(), "POST", "/api/goals/"+args[0]+"/revise", req, &result); err != nil {
+		return fmt.Errorf("revise goal: %w", err)
+	}
+
+	data, _ := json.MarshalIndent(result, "", "  ")
+	fmt.Println(string(data))
+	return nil
+}
+
+// daemonAddr returns the daemon address to connect to.
+func daemonAddr() string {
+	if addr := os.Getenv("OPC_DAEMON_ADDR"); addr != "" {
+		return addr
+	}
+	return client.DefaultDaemonAddr
 }
