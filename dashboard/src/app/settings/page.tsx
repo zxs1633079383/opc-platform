@@ -2,8 +2,10 @@
 
 import { useState } from 'react'
 import { Save, Key, Bell, Server, Shield } from 'lucide-react'
+import { useTranslation } from '@/lib/i18n'
 
 export default function SettingsPage() {
+  const { t } = useTranslation()
   const [saved, setSaved] = useState(false)
 
   const handleSave = () => {
@@ -15,10 +17,10 @@ export default function SettingsPage() {
     <div className="p-6 space-y-6 max-w-4xl">
       <div>
         <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-          Settings
+          {t('settings.title')}
         </h1>
         <p className="text-gray-500 dark:text-gray-400">
-          Configure your OPC Platform
+          {t('settings.subtitle')}
         </p>
       </div>
 
@@ -29,13 +31,13 @@ export default function SettingsPage() {
             <Key className="w-5 h-5 text-blue-600 dark:text-blue-400" />
           </div>
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-            API Configuration
+            {t('settings.apiConfig')}
           </h2>
         </div>
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              OpenAI API Key
+              {t('settings.openaiKey')}
             </label>
             <input
               type="password"
@@ -45,7 +47,7 @@ export default function SettingsPage() {
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Anthropic API Key
+              {t('settings.anthropicKey')}
             </label>
             <input
               type="password"
@@ -63,13 +65,13 @@ export default function SettingsPage() {
             <Bell className="w-5 h-5 text-yellow-600 dark:text-yellow-400" />
           </div>
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-            Notifications
+            {t('settings.notifications')}
           </h2>
         </div>
         <div className="space-y-4">
           <label className="flex items-center justify-between">
             <span className="text-sm text-gray-700 dark:text-gray-300">
-              Email notifications for task failures
+              {t('settings.emailOnFailure')}
             </span>
             <input
               type="checkbox"
@@ -79,7 +81,7 @@ export default function SettingsPage() {
           </label>
           <label className="flex items-center justify-between">
             <span className="text-sm text-gray-700 dark:text-gray-300">
-              Budget alert notifications
+              {t('settings.budgetAlerts')}
             </span>
             <input
               type="checkbox"
@@ -89,7 +91,7 @@ export default function SettingsPage() {
           </label>
           <label className="flex items-center justify-between">
             <span className="text-sm text-gray-700 dark:text-gray-300">
-              Agent crash notifications
+              {t('settings.agentCrashes')}
             </span>
             <input
               type="checkbox"
@@ -107,13 +109,13 @@ export default function SettingsPage() {
             <Server className="w-5 h-5 text-purple-600 dark:text-purple-400" />
           </div>
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-            Gateway Channels
+            {t('settings.gateway')}
           </h2>
         </div>
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Telegram Bot Token
+              {t('settings.telegramToken')}
             </label>
             <input
               type="password"
@@ -123,7 +125,7 @@ export default function SettingsPage() {
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Discord Bot Token
+              {t('settings.discordToken')}
             </label>
             <input
               type="password"
@@ -141,13 +143,13 @@ export default function SettingsPage() {
             <Shield className="w-5 h-5 text-red-600 dark:text-red-400" />
           </div>
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-            Security
+            {t('settings.security')}
           </h2>
         </div>
         <div className="space-y-4">
           <label className="flex items-center justify-between">
             <span className="text-sm text-gray-700 dark:text-gray-300">
-              Require confirmation for destructive operations
+              {t('settings.confirmDestructive')}
             </span>
             <input
               type="checkbox"
@@ -157,7 +159,7 @@ export default function SettingsPage() {
           </label>
           <label className="flex items-center justify-between">
             <span className="text-sm text-gray-700 dark:text-gray-300">
-              Enable audit logging
+              {t('settings.auditLogging')}
             </span>
             <input
               type="checkbox"
@@ -175,7 +177,7 @@ export default function SettingsPage() {
           className="flex items-center gap-2 px-6 py-2 text-white bg-primary-600 hover:bg-primary-700 rounded-lg transition-colors"
         >
           <Save className="w-4 h-4" />
-          {saved ? 'Saved!' : 'Save Changes'}
+          {saved ? t('settings.saved') : t('settings.save')}
         </button>
       </div>
     </div>

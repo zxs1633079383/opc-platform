@@ -1,10 +1,114 @@
 'use client'
 
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Plus, Play, Pause, Clock } from 'lucide-react'
-import { fetchWorkflows } from '@/lib/api'
+import { Plus, Play, Pause, Clock, ChevronDown, ChevronRight, CheckCircle, XCircle, Loader2 } from 'lucide-react'
+import { fetchWorkflows, fetchWorkflowRuns } from '@/lib/api'
+import type { WorkflowRun, WorkflowStepResult } from '@/types'
+
+function RunSteps({ stepsJson }: { stepsJson: string }) {
+  let steps: WorkflowStepResult[] = []
+  try {
+    steps = JSON.parse(stepsJson || '[]')
+  } catch {
+    return <span className="text-xs text-gray-400">Invalid steps data</span>
+  }
+
+  if (steps.length === 0) {
+    return <span className="text-xs text-gray-400">No steps</span>
+  }
+
+  return (
+    <div className="mt-2 space-y-1">
+      {steps.map((step) => (
+        <div key={step.name} className="flex items-center gap-2 text-sm">
+          {step.status === 'Completed' ? (
+            <CheckCircle className="w-4 h-4 text-green-500" />
+          ) : step.status === 'Failed' ? (
+            <XCircle className="w-4 h-4 text-red-500" />
+          ) : step.status === 'Running' ? (
+            <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />
+          ) : (
+            <div className="w-4 h-4 rounded-full border border-gray-300" />
+          )}
+          <span className="text-gray-700 dark:text-gray-300">{step.name}</span>
+          <span className="text-xs text-gray-400">{step.status}</span>
+          {step.error && (
+            <span className="text-xs text-red-400 ml-2">{step.error}</span>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function WorkflowRunHistory({ workflowName }: { workflowName: string }) {
+  const [expandedRun, setExpandedRun] = useState<string | null>(null)
+
+  const { data: runs = [], isLoading } = useQuery({
+    queryKey: ['workflowRuns', workflowName],
+    queryFn: () => fetchWorkflowRuns(workflowName),
+  })
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center gap-2 text-sm text-gray-400 mt-3">
+        <Loader2 className="w-4 h-4 animate-spin" />
+        Loading runs...
+      </div>
+    )
+  }
+
+  if (runs.length === 0) {
+    return (
+      <p className="text-sm text-gray-400 mt-3">No run history yet</p>
+    )
+  }
+
+  return (
+    <div className="mt-3 space-y-2">
+      <h4 className="text-sm font-medium text-gray-600 dark:text-gray-400">Run History</h4>
+      {runs.map((run: WorkflowRun) => (
+        <div
+          key={run.id}
+          className="border border-gray-100 dark:border-gray-700 rounded-lg p-3"
+        >
+          <button
+            onClick={() => setExpandedRun(expandedRun === run.id ? null : run.id)}
+            className="flex items-center gap-2 w-full text-left"
+          >
+            {expandedRun === run.id ? (
+              <ChevronDown className="w-4 h-4 text-gray-400" />
+            ) : (
+              <ChevronRight className="w-4 h-4 text-gray-400" />
+            )}
+            <span className="text-sm font-mono text-gray-600 dark:text-gray-300">
+              {run.id.slice(0, 12)}
+            </span>
+            <span className={`text-xs px-2 py-0.5 rounded-full ${
+              run.status === 'Completed' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
+              run.status === 'Failed' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' :
+              run.status === 'Running' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' :
+              'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400'
+            }`}>
+              {run.status}
+            </span>
+            <span className="text-xs text-gray-400 ml-auto">
+              {new Date(run.startedAt).toLocaleString()}
+            </span>
+          </button>
+          {expandedRun === run.id && (
+            <RunSteps stepsJson={run.stepsJson ?? (typeof run.steps === 'string' ? run.steps : JSON.stringify(run.steps ?? []))} />
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
 
 export default function WorkflowsPage() {
+  const [expandedWorkflow, setExpandedWorkflow] = useState<string | null>(null)
+
   const { data: workflows = [], isLoading } = useQuery({
     queryKey: ['workflows'],
     queryFn: fetchWorkflows,
@@ -58,11 +162,21 @@ export default function WorkflowsPage() {
             >
               <div className="flex items-start justify-between">
                 <div>
-                  <h3 className="text-lg font-medium text-gray-900 dark:text-white">
-                    {workflow.name}
-                  </h3>
+                  <button
+                    onClick={() => setExpandedWorkflow(expandedWorkflow === workflow.name ? null : workflow.name)}
+                    className="flex items-center gap-2"
+                  >
+                    {expandedWorkflow === workflow.name ? (
+                      <ChevronDown className="w-5 h-5 text-gray-400" />
+                    ) : (
+                      <ChevronRight className="w-5 h-5 text-gray-400" />
+                    )}
+                    <h3 className="text-lg font-medium text-gray-900 dark:text-white">
+                      {workflow.name}
+                    </h3>
+                  </button>
                   {workflow.schedule && (
-                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 ml-7">
                       <Clock className="w-4 h-4 inline mr-1" />
                       {workflow.schedule}
                     </p>
@@ -80,7 +194,7 @@ export default function WorkflowsPage() {
                   )}
                 </div>
               </div>
-              <div className="mt-4 flex gap-2">
+              <div className="mt-4 flex gap-2 ml-7">
                 {workflow.steps.map((step, i) => (
                   <div
                     key={step.name}
@@ -93,6 +207,11 @@ export default function WorkflowsPage() {
                   </div>
                 ))}
               </div>
+              {expandedWorkflow === workflow.name && (
+                <div className="ml-7">
+                  <WorkflowRunHistory workflowName={workflow.name} />
+                </div>
+              )}
             </div>
           ))}
         </div>

@@ -1,4 +1,4 @@
-import type { Agent, Task, Metrics, CostDataPoint, Workflow, CostEvent, LogEntry } from '@/types'
+import type { Agent, Task, Metrics, CostDataPoint, Workflow, WorkflowRun, CostEvent, LogEntry, Company, Goal, Project, HierarchyStats, Issue } from '@/types'
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:9527/api'
 
@@ -90,4 +90,199 @@ export async function deleteWorkflow(name: string): Promise<void> {
   if (!response.ok) {
     throw new Error(`Failed to delete workflow: ${response.statusText}`)
   }
+}
+
+// ---- federation ----
+
+export async function fetchCompanies(): Promise<Company[]> {
+  return fetchJson<Company[]>('/federation/companies')
+}
+
+export async function registerCompany(data: {
+  name: string
+  endpoint: string
+  type: string
+  agents?: string[]
+}): Promise<Company> {
+  const response = await fetch(`${API_BASE}/federation/companies`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}))
+    throw new Error(body.error || `Failed to register company: ${response.statusText}`)
+  }
+  return response.json()
+}
+
+export async function unregisterCompany(id: string): Promise<void> {
+  const response = await fetch(`${API_BASE}/federation/companies/${id}`, { method: 'DELETE' })
+  if (!response.ok) {
+    throw new Error(`Failed to unregister company: ${response.statusText}`)
+  }
+}
+
+export async function updateCompanyStatus(id: string, status: string): Promise<void> {
+  const response = await fetch(`${API_BASE}/federation/companies/${id}/status`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status }),
+  })
+  if (!response.ok) {
+    throw new Error(`Failed to update company status: ${response.statusText}`)
+  }
+}
+
+export async function fetchCompanyAgents(companyId: string): Promise<Agent[]> {
+  return fetchJson<Agent[]>(`/federation/companies/${companyId}/agents`)
+}
+
+export async function fetchCompanyTasks(companyId: string): Promise<Task[]> {
+  return fetchJson<Task[]>(`/federation/companies/${companyId}/tasks`)
+}
+
+export async function fetchCompanyMetrics(companyId: string): Promise<Metrics> {
+  return fetchJson<Metrics>(`/federation/companies/${companyId}/metrics`)
+}
+
+export async function pingCompany(companyId: string): Promise<{ healthy: boolean }> {
+  return fetchJson<{ healthy: boolean }>(`/federation/companies/${companyId}/health`)
+}
+
+export interface FederatedAgent extends Agent {
+  company: string
+  companyId: string
+}
+
+export async function fetchFederatedAgents(): Promise<FederatedAgent[]> {
+  return fetchJson<FederatedAgent[]>('/federation/aggregate/agents')
+}
+
+export interface AggregatedMetrics extends Metrics {
+  companyCount: number
+  onlineCount: number
+}
+
+export async function fetchFederatedMetrics(): Promise<AggregatedMetrics> {
+  return fetchJson<AggregatedMetrics>('/federation/aggregate/metrics')
+}
+
+export interface FederatedGoalRequest {
+  name: string
+  description: string
+  companies: string[]
+}
+
+export async function createFederatedGoal(data: FederatedGoalRequest): Promise<{
+  goalId: string
+  name: string
+  description: string
+  dispatched: Array<{
+    companyId: string
+    companyName: string
+    status: string
+    error?: string
+  }>
+}> {
+  const response = await fetch(`${API_BASE}/goals/federated`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}))
+    throw new Error(body.error || `Failed to create federated goal: ${response.statusText}`)
+  }
+  return response.json()
+}
+
+export async function toggleWorkflow(name: string, enabled: boolean): Promise<void> {
+  const response = await fetch(`${API_BASE}/workflows/${name}/toggle`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled }),
+  })
+  if (!response.ok) {
+    throw new Error(`Failed to toggle workflow: ${response.statusText}`)
+  }
+}
+
+// ---- Goals ----
+
+export async function fetchGoals(): Promise<Goal[]> {
+  return fetchJson<Goal[]>(`${API_BASE}/goals`)
+}
+
+export async function fetchGoalProjects(goalId: string): Promise<Project[]> {
+  return fetchJson<Project[]>(`${API_BASE}/goals/${goalId}/projects`)
+}
+
+export async function fetchGoalStats(goalId: string): Promise<HierarchyStats> {
+  return fetchJson<HierarchyStats>(`${API_BASE}/goals/${goalId}/stats`)
+}
+
+export async function createGoal(data: { name: string; description?: string; owner?: string; deadline?: string }): Promise<Goal> {
+  const response = await fetch(`${API_BASE}/goals`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  if (!response.ok) throw new Error(`Failed to create goal: ${response.statusText}`)
+  return response.json()
+}
+
+export async function deleteGoal(id: string): Promise<void> {
+  const response = await fetch(`${API_BASE}/goals/${id}`, { method: 'DELETE' })
+  if (!response.ok) throw new Error(`Failed to delete goal: ${response.statusText}`)
+}
+
+// ---- Projects ----
+
+export async function createProject(data: Partial<Project> & { name?: string; goalId?: string }): Promise<Project> {
+  const response = await fetch(`${API_BASE}/projects`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  if (!response.ok) throw new Error(`Failed to create project: ${response.statusText}`)
+  return response.json()
+}
+
+export async function deleteProject(id: string): Promise<void> {
+  const response = await fetch(`${API_BASE}/projects/${id}`, { method: 'DELETE' })
+  if (!response.ok) throw new Error(`Failed to delete project: ${response.statusText}`)
+}
+
+// ---- Agent apply ----
+
+export async function applyAgent(yamlContent: string): Promise<{ message: string }> {
+  const response = await fetch(`${API_BASE}/apply`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-yaml' },
+    body: yamlContent,
+  })
+  if (!response.ok) throw new Error(`Failed to apply: ${response.statusText}`)
+  return response.json()
+}
+
+// ---- Task logs ----
+
+export async function fetchTaskLogs(taskId: string): Promise<string> {
+  const response = await fetch(`${API_BASE}/tasks/${taskId}/logs`)
+  if (!response.ok) return ''
+  const data = await response.json()
+  return data.logs || data.result || ''
+}
+
+export async function fetchProjects(): Promise<Project[]> {
+  return fetchJson<Project[]>(`${API_BASE}/projects`)
+}
+
+export async function fetchIssues(): Promise<Issue[]> {
+  return fetchJson<Issue[]>(`${API_BASE}/issues`)
+}
+
+export async function fetchWorkflowRuns(name: string): Promise<WorkflowRun[]> {
+  return fetchJson<WorkflowRun[]>(`${API_BASE}/workflows/${name}/runs`)
 }

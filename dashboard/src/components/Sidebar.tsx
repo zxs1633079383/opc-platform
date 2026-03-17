@@ -10,18 +10,37 @@ import {
   ScrollText,
   Settings,
   Workflow,
+  Globe,
+  Target,
+  Languages,
 } from 'lucide-react'
 import { clsx } from 'clsx'
+import { useTranslation } from '@/lib/i18n'
 
 const navItems = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/agents', label: 'Agents', icon: Bot },
   { href: '/tasks', label: 'Tasks', icon: ListTodo },
+  { href: '/goals', label: 'Goals', icon: Target },
   { href: '/workflows', label: 'Workflows', icon: Workflow },
+  { href: '/federation', label: 'Federation', icon: Globe },
   { href: '/costs', label: 'Costs', icon: DollarSign },
   { href: '/logs', label: 'Logs', icon: ScrollText },
   { href: '/settings', label: 'Settings', icon: Settings },
 ]
+
+function LanguageToggle() {
+  const { locale, setLocale } = useTranslation()
+  return (
+    <button
+      onClick={() => setLocale(locale === 'zh' ? 'en' : 'zh')}
+      className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium w-full text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800 transition-colors"
+    >
+      <Languages className="w-5 h-5" />
+      {locale === 'zh' ? 'English' : '中文'}
+    </button>
+  )
+}
 
 export function Sidebar() {
   const pathname = usePathname()
@@ -65,9 +84,10 @@ export function Sidebar() {
         })}
       </nav>
 
-      {/* Version */}
-      <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-800">
-        <p className="text-xs text-gray-400">OPC Platform v0.1.0</p>
+      {/* Language Toggle + Version */}
+      <div className="px-3 py-4 border-t border-gray-200 dark:border-gray-800 space-y-2">
+        <LanguageToggle />
+        <p className="text-xs text-gray-400 px-3">OPC Platform v0.5.0</p>
       </div>
     </aside>
   )

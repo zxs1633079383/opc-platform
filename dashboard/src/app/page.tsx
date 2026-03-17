@@ -7,8 +7,11 @@ import { MetricCard } from '@/components/MetricCard'
 import { CostChart } from '@/components/CostChart'
 import { TaskList } from '@/components/TaskList'
 import { fetchAgents, fetchMetrics, fetchTasks, fetchCostData } from '@/lib/api'
+import { useTranslation } from '@/lib/i18n'
 
 export default function DashboardPage() {
+  const { t } = useTranslation()
+
   const { data: agents = [], isLoading: agentsLoading } = useQuery({
     queryKey: ['agents'],
     queryFn: fetchAgents,
@@ -32,7 +35,6 @@ export default function DashboardPage() {
   const runningAgents = agents.filter(a => a.phase === 'Running').length
   const runningTasks = tasks.filter(t => t.status === 'Running').length
   const completedTasks = tasks.filter(t => t.status === 'Completed').length
-  const failedTasks = tasks.filter(t => t.status === 'Failed').length
 
   return (
     <div className="p-6 space-y-6">
@@ -40,43 +42,43 @@ export default function DashboardPage() {
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-            Dashboard
+            {t('dashboard.title')}
           </h1>
           <p className="text-gray-500 dark:text-gray-400">
-            Agent Orchestration Platform Control Center
+            {t('dashboard.subtitle')}
           </p>
         </div>
         <div className="flex items-center gap-2 text-sm text-gray-500">
           <span className="inline-block w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-          System Online
+          {t('dashboard.systemOnline')}
         </div>
       </div>
 
       {/* Metric Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <MetricCard
-          title="Active Agents"
+          title={t('dashboard.activeAgents')}
           value={runningAgents}
           total={agents.length}
           icon={<Activity className="w-5 h-5" />}
           color="blue"
         />
         <MetricCard
-          title="Running Tasks"
+          title={t('dashboard.runningTasks')}
           value={runningTasks}
           icon={<Zap className="w-5 h-5" />}
           color="yellow"
         />
         <MetricCard
-          title="Completed Today"
+          title={t('dashboard.completedToday')}
           value={completedTasks}
           icon={<CheckCircle2 className="w-5 h-5" />}
           color="green"
         />
         <MetricCard
-          title="Today's Cost"
+          title={t('dashboard.todayCost')}
           value={`$${metrics?.todayCost?.toFixed(2) || '0.00'}`}
-          subtitle={`Budget: $${metrics?.dailyBudget || '10.00'}`}
+          subtitle={`${t('common.budget')}: $${metrics?.dailyBudget || '10.00'}`}
           icon={<DollarSign className="w-5 h-5" />}
           color="purple"
         />
@@ -87,7 +89,7 @@ export default function DashboardPage() {
         {/* Agent Status Overview */}
         <div className="lg:col-span-2 bg-white dark:bg-gray-900 rounded-xl shadow-sm border border-gray-200 dark:border-gray-800 p-6">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-            Agent Status
+            {t('dashboard.agentStatus')}
           </h2>
           {agentsLoading ? (
             <div className="flex items-center justify-center h-48">
@@ -96,7 +98,7 @@ export default function DashboardPage() {
           ) : agents.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-48 text-gray-500">
               <AlertCircle className="w-8 h-8 mb-2" />
-              <p>No agents configured</p>
+              <p>{t('dashboard.noAgents')}</p>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -110,7 +112,7 @@ export default function DashboardPage() {
         {/* Cost Chart */}
         <div className="bg-white dark:bg-gray-900 rounded-xl shadow-sm border border-gray-200 dark:border-gray-800 p-6">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-            Cost (7 Days)
+            {t('dashboard.costTrend')}
           </h2>
           <CostChart data={costData} />
         </div>
@@ -120,13 +122,13 @@ export default function DashboardPage() {
       <div className="bg-white dark:bg-gray-900 rounded-xl shadow-sm border border-gray-200 dark:border-gray-800 p-6">
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-            Recent Tasks
+            {t('dashboard.recentTasks')}
           </h2>
           <a
             href="/tasks"
             className="text-sm text-primary-600 hover:text-primary-700 dark:text-primary-400"
           >
-            View all →
+            {t('dashboard.viewAll')} →
           </a>
         </div>
         <TaskList tasks={tasks.slice(0, 10)} />

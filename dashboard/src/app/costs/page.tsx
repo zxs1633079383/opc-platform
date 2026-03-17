@@ -5,8 +5,11 @@ import { Download, Calendar } from 'lucide-react'
 import { CostChart } from '@/components/CostChart'
 import { MetricCard } from '@/components/MetricCard'
 import { fetchCostData, fetchMetrics } from '@/lib/api'
+import { useTranslation } from '@/lib/i18n'
 
 export default function CostsPage() {
+  const { t } = useTranslation()
+
   const { data: costData = [] } = useQuery({
     queryKey: ['costData'],
     queryFn: fetchCostData,
@@ -27,42 +30,42 @@ export default function CostsPage() {
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-            Cost Management
+            {t('costs.title')}
           </h1>
           <p className="text-gray-500 dark:text-gray-400">
-            Monitor and control your AI spending
+            {t('costs.subtitle')}
           </p>
         </div>
         <button className="flex items-center gap-2 px-4 py-2 text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 transition-colors">
           <Download className="w-4 h-4" />
-          Export CSV
+          {t('costs.export')}
         </button>
       </div>
 
       {/* Cost Overview Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <MetricCard
-          title="Today's Cost"
+          title={t('costs.todayCost')}
           value={`$${todayCost.toFixed(2)}`}
-          subtitle={`Budget: $${dailyBudget}`}
+          subtitle={`${t('common.budget')}: $${dailyBudget}`}
           icon={<Calendar className="w-5 h-5" />}
           color={todayCost > dailyBudget * 0.8 ? 'red' : 'blue'}
         />
         <MetricCard
-          title="This Month"
+          title={t('costs.monthCost')}
           value={`$${monthCost.toFixed(2)}`}
-          subtitle={`Budget: $${monthlyBudget}`}
+          subtitle={`${t('common.budget')}: $${monthlyBudget}`}
           icon={<Calendar className="w-5 h-5" />}
           color={monthCost > monthlyBudget * 0.8 ? 'red' : 'green'}
         />
         <MetricCard
-          title="Daily Average"
+          title={t('costs.dailyAvg')}
           value={`$${(monthCost / new Date().getDate()).toFixed(2)}`}
           icon={<Calendar className="w-5 h-5" />}
           color="purple"
         />
         <MetricCard
-          title="Projected Monthly"
+          title={t('costs.projected')}
           value={`$${((monthCost / new Date().getDate()) * 30).toFixed(2)}`}
           icon={<Calendar className="w-5 h-5" />}
           color="yellow"
@@ -72,7 +75,7 @@ export default function CostsPage() {
       {/* Cost Chart */}
       <div className="bg-white dark:bg-gray-900 rounded-xl shadow-sm border border-gray-200 dark:border-gray-800 p-6">
         <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-          Daily Cost Trend (Last 7 Days)
+          {t('costs.dailyCostTrend')}
         </h2>
         <div className="h-80">
           <CostChart data={costData} />
@@ -82,12 +85,12 @@ export default function CostsPage() {
       {/* Budget Alerts */}
       <div className="bg-white dark:bg-gray-900 rounded-xl shadow-sm border border-gray-200 dark:border-gray-800 p-6">
         <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-          Budget Settings
+          {t('costs.budgetSettings')}
         </h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Daily Budget
+              {t('costs.dailyBudget')}
             </label>
             <div className="flex items-center gap-2">
               <span className="text-gray-500">$</span>
@@ -98,12 +101,12 @@ export default function CostsPage() {
               />
             </div>
             <p className="mt-1 text-sm text-gray-500">
-              Alert when 80% reached, pause at 100%
+              {t('costs.autoPause')}
             </p>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Monthly Budget
+              {t('costs.monthlyBudget')}
             </label>
             <div className="flex items-center gap-2">
               <span className="text-gray-500">$</span>
@@ -114,13 +117,13 @@ export default function CostsPage() {
               />
             </div>
             <p className="mt-1 text-sm text-gray-500">
-              Alert when 80% reached, pause at 100%
+              {t('costs.autoPause')}
             </p>
           </div>
         </div>
         <div className="mt-4">
           <button className="px-4 py-2 text-sm text-white bg-primary-600 hover:bg-primary-700 rounded-lg transition-colors">
-            Save Settings
+            {t('costs.saveSettings')}
           </button>
         </div>
       </div>

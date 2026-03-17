@@ -30,6 +30,9 @@ export interface Task {
   tokensIn?: number
   tokensOut?: number
   cost?: number
+  issueId?: string
+  projectId?: string
+  goalId?: string
   createdAt: string
   updatedAt: string
   startedAt?: string
@@ -57,6 +60,7 @@ export interface WorkflowRun {
   workflowName: string
   status: 'Pending' | 'Running' | 'Completed' | 'Failed'
   steps: WorkflowStepResult[]
+  stepsJson?: string
   startedAt: string
   endedAt?: string
 }
@@ -106,4 +110,67 @@ export interface LogEntry {
   agent?: string
   taskId?: string
   fields?: Record<string, unknown>
+}
+
+export interface Company {
+  id: string
+  name: string
+  endpoint: string
+  type: 'software' | 'operations' | 'sales' | 'custom'
+  status: 'Online' | 'Offline' | 'Busy'
+  agents?: string[]
+  joinedAt: string
+}
+
+export interface Goal {
+  id: string
+  name: string
+  description: string
+  owner?: string
+  deadline?: string
+  status: string
+  phase?: string
+  decompositionPlan?: string
+  decomposeCost?: number
+  tokensIn: number
+  tokensOut: number
+  cost: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface Project {
+  id: string
+  name: string
+  goalId: string
+  description: string
+  status: string
+  tokensIn: number
+  tokensOut: number
+  cost: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface HierarchyStats {
+  totalTokensIn: number
+  totalTokensOut: number
+  totalCost: number
+  taskCount: number
+  completedTasks: number
+  failedTasks: number
+}
+
+export interface Issue {
+  id: string
+  name: string
+  projectId: string
+  description: string
+  agentRef?: string
+  status: string
+  tokensIn: number
+  tokensOut: number
+  cost: number
+  createdAt: string
+  updatedAt: string
 }
