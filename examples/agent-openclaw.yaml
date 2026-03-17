@@ -46,3 +46,9 @@ spec:
     maxRestarts: 5
     restartDelay: 10s
     backoff: exponential
+  # OpenClaw Gateway connection.
+  # The adapter connects via WebSocket RPC to your running OpenClaw gateway.
+  # Default: ws://localhost:18789
+  protocol:
+    type: websocket
+    format: "ws://localhost:18789"

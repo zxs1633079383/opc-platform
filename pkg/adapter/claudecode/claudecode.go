@@ -2,9 +2,11 @@ package claudecode
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"sync"
 	"time"
@@ -47,6 +49,14 @@ func (a *Adapter) Start(_ context.Context, spec v1.AgentSpec) error {
 	defer a.mu.Unlock()
 
 	a.spec = spec
+
+	// Ensure workdir exists.
+	workdir := spec.Spec.Context.Workdir
+	if workdir == "" {
+		workdir = "/tmp/opc"
+	}
+	os.MkdirAll(workdir, 0o755)
+
 	a.phase = v1.AgentPhaseRunning
 	a.startAt = time.Now()
 
@@ -88,12 +98,25 @@ func (a *Adapter) Health() v1.HealthStatus {
 	return v1.HealthStatus{Healthy: false, Message: fmt.Sprintf("not running (phase: %s)", a.phase)}
 }
 
+// claudeModelMap maps short model names to Claude CLI-compatible model IDs.
+var claudeModelMap = map[string]string{
+	"claude-sonnet-4":   "claude-sonnet-4-20250514",
+	"claude-opus-4":     "claude-opus-4-20250514",
+	"claude-haiku-4":    "claude-haiku-4-5-20251001",
+	"claude-haiku-4.5":  "claude-haiku-4-5-20251001",
+}
+
 // buildBaseArgs constructs the common CLI arguments from the agent spec.
 func (a *Adapter) buildBaseArgs() []string {
 	var args []string
 
 	if a.spec.Spec.Runtime.Model.Name != "" {
-		args = append(args, "--model", a.spec.Spec.Runtime.Model.Name)
+		modelName := a.spec.Spec.Runtime.Model.Name
+		// Map short names to full model IDs that Claude CLI accepts.
+		if mapped, ok := claudeModelMap[modelName]; ok {
+			modelName = mapped
+		}
+		args = append(args, "--model", modelName)
 	}
 
 	if a.spec.Spec.Runtime.Inference.MaxTokens > 0 {
@@ -105,21 +128,35 @@ func (a *Adapter) buildBaseArgs() []string {
 
 // claudeCodeResult represents the JSON output from `claude --print --output-format json`.
 type claudeCodeResult struct {
-	Type      string `json:"type"`
-	Content   string `json:"content,omitempty"`
-	Result    string `json:"result,omitempty"`
-	TokensIn  int    `json:"input_tokens,omitempty"`
-	TokensOut int    `json:"output_tokens,omitempty"`
-	Error     string `json:"error,omitempty"`
+	Type         string  `json:"type"`
+	Content      string  `json:"content,omitempty"`
+	Result       string  `json:"result,omitempty"`
+	TokensIn     int     `json:"input_tokens,omitempty"`
+	TokensOut    int     `json:"output_tokens,omitempty"`
+	Error        string  `json:"error,omitempty"`
+	IsError      bool    `json:"is_error,omitempty"`
+	TotalCostUSD float64 `json:"total_cost_usd,omitempty"`
 
-	// Usage is an alternative field structure Claude Code may use.
-	Usage *claudeCodeUsage `json:"usage,omitempty"`
+	// Usage contains detailed token usage from Claude Code CLI.
+	Usage      *claudeCodeUsage      `json:"usage,omitempty"`
+	ModelUsage map[string]modelUsage `json:"modelUsage,omitempty"`
 }
 
 // claudeCodeUsage contains token usage info from Claude Code output.
 type claudeCodeUsage struct {
-	InputTokens  int `json:"input_tokens"`
-	OutputTokens int `json:"output_tokens"`
+	InputTokens              int `json:"input_tokens"`
+	OutputTokens             int `json:"output_tokens"`
+	CacheCreationInputTokens int `json:"cache_creation_input_tokens,omitempty"`
+	CacheReadInputTokens     int `json:"cache_read_input_tokens,omitempty"`
+}
+
+// modelUsage contains per-model usage from Claude Code CLI.
+type modelUsage struct {
+	InputTokens              int     `json:"inputTokens"`
+	OutputTokens             int     `json:"outputTokens"`
+	CacheReadInputTokens     int     `json:"cacheReadInputTokens,omitempty"`
+	CacheCreationInputTokens int     `json:"cacheCreationInputTokens,omitempty"`
+	CostUSD                  float64 `json:"costUSD,omitempty"`
 }
 
 // claudeCodeStreamEvent represents a single JSONL event from stream-json output.
@@ -141,8 +178,8 @@ func (a *Adapter) Execute(ctx context.Context, task v1.TaskRecord) (adapter.Exec
 	}
 	a.mu.RUnlock()
 
-	// Build command: claude --print -p "<message>"
-	args := []string{"--print"}
+	// Build command: claude --print --permission-mode acceptEdits -p "<message>"
+	args := []string{"--print", "--permission-mode", "acceptEdits"}
 	args = append(args, a.buildBaseArgs()...)
 	args = append(args, "--output-format", "json")
 	args = append(args, "-p", task.Message)
@@ -150,7 +187,14 @@ func (a *Adapter) Execute(ctx context.Context, task v1.TaskRecord) (adapter.Exec
 	cmd := exec.CommandContext(ctx, "claude", args...)
 	if a.spec.Spec.Context.Workdir != "" {
 		cmd.Dir = a.spec.Spec.Context.Workdir
+	} else {
+		// Default workdir — ensure it exists.
+		cmd.Dir = "/tmp/opc"
+		os.MkdirAll(cmd.Dir, 0o755)
 	}
+
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
 
 	a.mu.Lock()
 	a.activeCmd = cmd
@@ -166,29 +210,48 @@ func (a *Adapter) Execute(ctx context.Context, task v1.TaskRecord) (adapter.Exec
 		a.mu.Lock()
 		a.metrics.TasksFailed++
 		a.mu.Unlock()
-		return adapter.ExecuteResult{}, fmt.Errorf("claude execute: %w", err)
+		errMsg := stderr.String()
+		if errMsg == "" {
+			errMsg = err.Error()
+		}
+		return adapter.ExecuteResult{}, fmt.Errorf("claude execute: %s", errMsg)
 	}
 
 	// Try to parse JSON output for token usage.
 	var result adapter.ExecuteResult
 	var parsed claudeCodeResult
 	if jsonErr := json.Unmarshal(output, &parsed); jsonErr == nil {
-		if parsed.Error != "" {
+		if parsed.IsError || parsed.Error != "" {
 			a.mu.Lock()
 			a.metrics.TasksFailed++
 			a.mu.Unlock()
-			return adapter.ExecuteResult{}, fmt.Errorf("claude error: %s", parsed.Error)
+			errMsg := parsed.Error
+			if errMsg == "" {
+				errMsg = parsed.Result
+			}
+			return adapter.ExecuteResult{}, fmt.Errorf("claude error: %s", errMsg)
 		}
 
 		result.Output = parsed.Result
 		if result.Output == "" {
 			result.Output = parsed.Content
 		}
-		result.TokensIn = parsed.TokensIn
-		result.TokensOut = parsed.TokensOut
+
+		// Use total_cost_usd reported by Claude CLI (most accurate).
+		result.Cost = parsed.TotalCostUSD
+
+		// Token usage: prefer usage field, then modelUsage aggregate.
 		if parsed.Usage != nil {
-			result.TokensIn = parsed.Usage.InputTokens
+			result.TokensIn = parsed.Usage.InputTokens + parsed.Usage.CacheCreationInputTokens + parsed.Usage.CacheReadInputTokens
 			result.TokensOut = parsed.Usage.OutputTokens
+		} else if len(parsed.ModelUsage) > 0 {
+			for _, mu := range parsed.ModelUsage {
+				result.TokensIn += mu.InputTokens + mu.CacheReadInputTokens + mu.CacheCreationInputTokens
+				result.TokensOut += mu.OutputTokens
+			}
+		} else {
+			result.TokensIn = parsed.TokensIn
+			result.TokensOut = parsed.TokensOut
 		}
 	} else {
 		// Fallback: treat raw output as plain text.
@@ -212,15 +275,16 @@ func (a *Adapter) Stream(ctx context.Context, task v1.TaskRecord) (<-chan adapte
 	}
 	a.mu.RUnlock()
 
-	// Build command: claude --output-format stream-json -p "<message>"
-	args := []string{"--output-format", "stream-json"}
+	// Build command: claude --permission-mode acceptEdits --output-format stream-json -p "<message>"
+	args := []string{"--permission-mode", "acceptEdits", "--output-format", "stream-json"}
 	args = append(args, a.buildBaseArgs()...)
-
 	args = append(args, "-p", task.Message)
 
 	cmd := exec.CommandContext(ctx, "claude", args...)
 	if a.spec.Spec.Context.Workdir != "" {
 		cmd.Dir = a.spec.Spec.Context.Workdir
+	} else {
+		cmd.Dir = os.TempDir()
 	}
 
 	stdout, err := cmd.StdoutPipe()

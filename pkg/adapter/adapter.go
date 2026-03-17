@@ -35,9 +35,10 @@ type Adapter interface {
 
 // ExecuteResult contains the output of a task execution.
 type ExecuteResult struct {
-	Output    string `json:"output"`
-	TokensIn  int    `json:"tokensIn"`
-	TokensOut int    `json:"tokensOut"`
+	Output    string  `json:"output"`
+	TokensIn  int     `json:"tokensIn"`
+	TokensOut int     `json:"tokensOut"`
+	Cost      float64 `json:"cost,omitempty"` // cost reported by the agent itself (e.g., claude total_cost_usd)
 }
 
 // Chunk represents a streaming output chunk.
