@@ -470,15 +470,37 @@ func TestExecuteTask(t *testing.T) {
 		}
 	})
 
-	t.Run("execute task on non-running agent", func(t *testing.T) {
+	t.Run("execute task on non-running agent marks task Failed", func(t *testing.T) {
 		badTask := v1.TaskRecord{
 			ID:        "task-bad",
 			AgentName: "nonexistent",
 			Message:   "should fail",
+			Status:    v1.TaskStatusPending,
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
 		}
+		if err := ctrl.Store().CreateTask(ctx, badTask); err != nil {
+			t.Fatalf("CreateTask() error = %v", err)
+		}
+
 		_, err := ctrl.ExecuteTask(ctx, badTask)
 		if err == nil {
 			t.Fatal("ExecuteTask() on non-running agent should return error")
+		}
+
+		// Verify task status is Failed (not stuck in Pending).
+		stored, getErr := ctrl.Store().GetTask(ctx, "task-bad")
+		if getErr != nil {
+			t.Fatalf("GetTask() error = %v", getErr)
+		}
+		if stored.Status != v1.TaskStatusFailed {
+			t.Errorf("stored status = %q, want %q", stored.Status, v1.TaskStatusFailed)
+		}
+		if stored.Error == "" {
+			t.Error("stored error should not be empty")
+		}
+		if stored.EndedAt == nil {
+			t.Error("stored endedAt should be set")
 		}
 	})
 

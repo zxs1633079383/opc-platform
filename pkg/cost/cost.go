@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -90,12 +91,48 @@ func pricingKey(provider, model string) string {
 }
 
 // defaultPricing returns the built-in pricing table for known models.
+// Prices are per 1K tokens in USD (as of 2025-Q2).
 func defaultPricing() map[string]ModelPricing {
 	models := []ModelPricing{
+		// --- Anthropic Claude ---
+		{Provider: "anthropic", Model: "claude-opus-4", InputPer1K: 0.015, OutputPer1K: 0.075},
 		{Provider: "anthropic", Model: "claude-sonnet-4", InputPer1K: 0.003, OutputPer1K: 0.015},
 		{Provider: "anthropic", Model: "claude-haiku-4", InputPer1K: 0.0008, OutputPer1K: 0.004},
-		{Provider: "anthropic", Model: "claude-opus-4", InputPer1K: 0.015, OutputPer1K: 0.075},
+		// Versioned variants
+		{Provider: "anthropic", Model: "claude-opus-4-20250514", InputPer1K: 0.015, OutputPer1K: 0.075},
+		{Provider: "anthropic", Model: "claude-sonnet-4-20250514", InputPer1K: 0.003, OutputPer1K: 0.015},
+		{Provider: "anthropic", Model: "claude-haiku-4-5-20251001", InputPer1K: 0.0008, OutputPer1K: 0.004},
+		// Legacy
+		{Provider: "anthropic", Model: "claude-3-5-sonnet-20241022", InputPer1K: 0.003, OutputPer1K: 0.015},
+		{Provider: "anthropic", Model: "claude-3-5-haiku-20241022", InputPer1K: 0.0008, OutputPer1K: 0.004},
+
+		// --- OpenAI ---
+		{Provider: "openai", Model: "gpt-4o", InputPer1K: 0.0025, OutputPer1K: 0.01},
+		{Provider: "openai", Model: "gpt-4o-mini", InputPer1K: 0.00015, OutputPer1K: 0.0006},
+		{Provider: "openai", Model: "gpt-4-turbo", InputPer1K: 0.01, OutputPer1K: 0.03},
 		{Provider: "openai", Model: "o4-mini", InputPer1K: 0.0011, OutputPer1K: 0.0044},
+		{Provider: "openai", Model: "o3", InputPer1K: 0.01, OutputPer1K: 0.04},
+		{Provider: "openai", Model: "o3-mini", InputPer1K: 0.0011, OutputPer1K: 0.0044},
+		{Provider: "openai", Model: "o1", InputPer1K: 0.015, OutputPer1K: 0.06},
+		{Provider: "openai", Model: "o1-mini", InputPer1K: 0.003, OutputPer1K: 0.012},
+
+		// --- OpenClaw (uses Anthropic models underneath) ---
+		{Provider: "openclaw", Model: "claude-sonnet-4", InputPer1K: 0.003, OutputPer1K: 0.015},
+		{Provider: "openclaw", Model: "claude-haiku-4", InputPer1K: 0.0008, OutputPer1K: 0.004},
+		{Provider: "openclaw", Model: "claude-opus-4", InputPer1K: 0.015, OutputPer1K: 0.075},
+
+		// --- Codex (uses OpenAI models) ---
+		{Provider: "codex", Model: "o4-mini", InputPer1K: 0.0011, OutputPer1K: 0.0044},
+		{Provider: "codex", Model: "codex", InputPer1K: 0.0011, OutputPer1K: 0.0044},
+
+		// --- Google Gemini ---
+		{Provider: "google", Model: "gemini-2.5-pro", InputPer1K: 0.00125, OutputPer1K: 0.01},
+		{Provider: "google", Model: "gemini-2.5-flash", InputPer1K: 0.00015, OutputPer1K: 0.0006},
+		{Provider: "google", Model: "gemini-2.0-flash", InputPer1K: 0.0001, OutputPer1K: 0.0004},
+
+		// --- DeepSeek ---
+		{Provider: "deepseek", Model: "deepseek-v3", InputPer1K: 0.00027, OutputPer1K: 0.0011},
+		{Provider: "deepseek", Model: "deepseek-r1", InputPer1K: 0.00055, OutputPer1K: 0.0022},
 	}
 
 	m := make(map[string]ModelPricing, len(models))
@@ -155,10 +192,28 @@ func (t *Tracker) RecordCost(event CostEvent) error {
 }
 
 // CalculateCost computes input and output cost for the given token counts
-// using the pricing table. Returns (0, 0) if the model is not found.
+// using the pricing table. Supports fuzzy matching: if "anthropic/claude-sonnet-4-20250514"
+// is not found, tries prefix matching against known models (e.g., "claude-sonnet-4").
 func (t *Tracker) CalculateCost(tokensIn, tokensOut int, provider, model string) (inputCost, outputCost float64) {
 	t.mu.RLock()
 	p, ok := t.pricing[pricingKey(provider, model)]
+	if !ok {
+		// Fuzzy match: find the longest model name that is a prefix of the given model.
+		var bestMatch ModelPricing
+		bestLen := 0
+		for _, candidate := range t.pricing {
+			if candidate.Provider == provider && len(candidate.Model) > bestLen {
+				if strings.HasPrefix(model, candidate.Model) {
+					bestMatch = candidate
+					bestLen = len(candidate.Model)
+					ok = true
+				}
+			}
+		}
+		if ok {
+			p = bestMatch
+		}
+	}
 	t.mu.RUnlock()
 
 	if !ok {

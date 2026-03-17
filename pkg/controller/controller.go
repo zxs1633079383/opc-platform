@@ -10,6 +10,7 @@ import (
 	"go.uber.org/zap"
 	v1 "github.com/zlc-ai/opc-platform/api/v1"
 	"github.com/zlc-ai/opc-platform/pkg/adapter"
+	"github.com/zlc-ai/opc-platform/pkg/cost"
 	"github.com/zlc-ai/opc-platform/pkg/storage"
 )
 
@@ -20,6 +21,10 @@ type Controller struct {
 	registry *adapter.Registry
 	agents   map[string]*managedAgent
 	logger   *zap.SugaredLogger
+	costMgr  *cost.Tracker
+
+	// Circuit breaker: consecutive failure count per agent.
+	failCounts map[string]int
 
 	// Lifecycle management fields.
 	lifecycleMu     sync.Mutex
@@ -33,13 +38,42 @@ type managedAgent struct {
 	cancel  context.CancelFunc
 }
 
+// circuitBreakerThreshold is the number of consecutive failures before
+// an agent is automatically stopped.
+const circuitBreakerThreshold = 5
+
 // New creates a new Controller.
 func New(store storage.Store, registry *adapter.Registry, logger *zap.SugaredLogger) *Controller {
 	return &Controller{
-		store:    store,
-		registry: registry,
-		agents:   make(map[string]*managedAgent),
-		logger:   logger,
+		store:      store,
+		registry:   registry,
+		agents:     make(map[string]*managedAgent),
+		failCounts: make(map[string]int),
+		logger:     logger,
+	}
+}
+
+// SetCostTracker sets the cost tracker for recording task costs.
+func (c *Controller) SetCostTracker(tracker *cost.Tracker) {
+	c.costMgr = tracker
+}
+
+// RecoverAgents restarts all agents that were previously in Running phase.
+// Call this on daemon startup to restore agent state from a prior session.
+func (c *Controller) RecoverAgents(ctx context.Context) {
+	agents, err := c.store.ListAgents(ctx)
+	if err != nil {
+		c.logger.Errorw("failed to list agents for recovery", "error", err)
+		return
+	}
+
+	for _, record := range agents {
+		if record.Phase == v1.AgentPhaseRunning || record.Phase == v1.AgentPhaseStarting {
+			c.logger.Infow("recovering agent", "name", record.Name, "type", record.Type)
+			if err := c.StartAgent(ctx, record.Name); err != nil {
+				c.logger.Warnw("failed to recover agent", "name", record.Name, "error", err)
+			}
+		}
 	}
 }
 
@@ -101,8 +135,10 @@ func (c *Controller) StartAgent(ctx context.Context, name string) error {
 		return fmt.Errorf("create adapter for %q: %w", record.Type, err)
 	}
 
-	agentCtx, cancel := context.WithCancel(ctx)
-	if err := adp.Start(agentCtx, spec); err != nil {
+	agentCtx, cancel := context.WithCancel(context.Background())
+	startCtx, startCancel := context.WithTimeout(agentCtx, 30*time.Second)
+	defer startCancel()
+	if err := adp.Start(startCtx, spec); err != nil {
 		cancel()
 		record.Phase = v1.AgentPhaseFailed
 		record.Message = err.Error()
@@ -196,15 +232,40 @@ func (c *Controller) GetAdapter(name string) (adapter.Adapter, error) {
 
 // ExecuteTask runs a task against a named agent.
 func (c *Controller) ExecuteTask(ctx context.Context, task v1.TaskRecord) (adapter.ExecuteResult, error) {
+	// Check budget before execution.
+	if c.costMgr != nil {
+		status := c.costMgr.GetBudgetStatus()
+		if status.Exceeded {
+			now := time.Now()
+			task.Status = v1.TaskStatusFailed
+			task.Error = fmt.Sprintf("budget exceeded: daily %.2f/%.2f, monthly %.2f/%.2f",
+				status.DailySpent, status.DailyLimit, status.MonthlySpent, status.MonthlyLimit)
+			task.EndedAt = &now
+			if storeErr := c.store.UpdateTask(ctx, task); storeErr != nil {
+				c.logger.Errorw("failed to update task status", "task", task.ID, "error", storeErr)
+			}
+			return adapter.ExecuteResult{}, fmt.Errorf("budget exceeded")
+		}
+	}
+
 	adp, err := c.GetAdapter(task.AgentName)
 	if err != nil {
+		now := time.Now()
+		task.Status = v1.TaskStatusFailed
+		task.Error = fmt.Sprintf("agent not available: %v", err)
+		task.EndedAt = &now
+		if storeErr := c.store.UpdateTask(ctx, task); storeErr != nil {
+			c.logger.Errorw("failed to update task status", "task", task.ID, "error", storeErr)
+		}
 		return adapter.ExecuteResult{}, err
 	}
 
 	now := time.Now()
 	task.Status = v1.TaskStatusRunning
 	task.StartedAt = &now
-	c.store.UpdateTask(ctx, task)
+	if storeErr := c.store.UpdateTask(ctx, task); storeErr != nil {
+		c.logger.Errorw("failed to update task status", "task", task.ID, "error", storeErr)
+	}
 
 	result, err := adp.Execute(ctx, task)
 	endTime := time.Now()
@@ -212,16 +273,76 @@ func (c *Controller) ExecuteTask(ctx context.Context, task v1.TaskRecord) (adapt
 		task.Status = v1.TaskStatusFailed
 		task.Error = err.Error()
 		task.EndedAt = &endTime
-		c.store.UpdateTask(ctx, task)
+		if storeErr := c.store.UpdateTask(ctx, task); storeErr != nil {
+			c.logger.Errorw("failed to update task status", "task", task.ID, "error", storeErr)
+		}
+
+		// Circuit breaker: track consecutive failures per agent.
+		c.mu.Lock()
+		c.failCounts[task.AgentName]++
+		count := c.failCounts[task.AgentName]
+		c.mu.Unlock()
+
+		if count >= circuitBreakerThreshold {
+			c.logger.Warnw("circuit breaker triggered: auto-stopping agent after consecutive failures",
+				"agent", task.AgentName, "consecutiveFailures", count)
+			if stopErr := c.StopAgent(ctx, task.AgentName); stopErr != nil {
+				c.logger.Errorw("failed to auto-stop agent via circuit breaker",
+					"agent", task.AgentName, "error", stopErr)
+			}
+			// Mark agent phase as Failed.
+			if record, getErr := c.store.GetAgent(ctx, task.AgentName); getErr == nil {
+				record.Phase = v1.AgentPhaseFailed
+				record.Message = fmt.Sprintf("circuit breaker: %d consecutive task failures", count)
+				c.store.UpdateAgent(ctx, record)
+			}
+		}
+
 		return adapter.ExecuteResult{}, err
 	}
+
+	// Reset consecutive failure count on success.
+	c.mu.Lock()
+	delete(c.failCounts, task.AgentName)
+	c.mu.Unlock()
 
 	task.Status = v1.TaskStatusCompleted
 	task.Result = result.Output
 	task.TokensIn = result.TokensIn
 	task.TokensOut = result.TokensOut
 	task.EndedAt = &endTime
-	c.store.UpdateTask(ctx, task)
+
+	// Calculate and record cost.
+	// Prefer agent-reported cost (e.g., Claude CLI's total_cost_usd) over our pricing table.
+	if c.costMgr != nil {
+		provider, model := c.getAgentModel(task.AgentName)
+		var inCost, outCost float64
+		if result.Cost > 0 {
+			// Agent reported its own cost — use it directly.
+			task.Cost = result.Cost
+		} else {
+			// Fall back to pricing table calculation.
+			inCost, outCost = c.costMgr.CalculateCost(result.TokensIn, result.TokensOut, provider, model)
+			task.Cost = inCost + outCost
+		}
+		_ = c.costMgr.RecordCost(cost.CostEvent{
+			AgentName:     task.AgentName,
+			TaskID:        task.ID,
+			GoalRef:       task.GoalID,
+			ProjectRef:    task.ProjectID,
+			TokensIn:      result.TokensIn,
+			TokensOut:     result.TokensOut,
+			InputCost:     inCost,
+			OutputCost:    outCost,
+			Duration:      endTime.Sub(now),
+			ModelProvider: provider,
+			ModelName:     model,
+		})
+	}
+
+	if storeErr := c.store.UpdateTask(ctx, task); storeErr != nil {
+		c.logger.Errorw("failed to update task status", "task", task.ID, "error", storeErr)
+	}
 
 	return result, nil
 }
@@ -230,13 +351,22 @@ func (c *Controller) ExecuteTask(ctx context.Context, task v1.TaskRecord) (adapt
 func (c *Controller) StreamTask(ctx context.Context, task v1.TaskRecord) (<-chan adapter.Chunk, error) {
 	adp, err := c.GetAdapter(task.AgentName)
 	if err != nil {
+		now := time.Now()
+		task.Status = v1.TaskStatusFailed
+		task.Error = fmt.Sprintf("agent not available: %v", err)
+		task.EndedAt = &now
+		if storeErr := c.store.UpdateTask(ctx, task); storeErr != nil {
+			c.logger.Errorw("failed to update task status", "task", task.ID, "error", storeErr)
+		}
 		return nil, err
 	}
 
 	now := time.Now()
 	task.Status = v1.TaskStatusRunning
 	task.StartedAt = &now
-	c.store.UpdateTask(ctx, task)
+	if storeErr := c.store.UpdateTask(ctx, task); storeErr != nil {
+		c.logger.Errorw("failed to update task status", "task", task.ID, "error", storeErr)
+	}
 
 	return adp.Stream(ctx, task)
 }
@@ -260,7 +390,36 @@ func (c *Controller) AgentMetrics() map[string]v1.AgentMetrics {
 
 	result := make(map[string]v1.AgentMetrics, len(c.agents))
 	for name, ma := range c.agents {
-		result[name] = ma.adapter.Metrics()
+		m := ma.adapter.Metrics()
+
+		// Enrich with cost data from task records.
+		tasks, err := c.store.ListTasksByAgent(context.Background(), name)
+		if err == nil {
+			var totalCost float64
+			var totalIn, totalOut int
+			var completed, failed, running int
+			for _, t := range tasks {
+				totalCost += t.Cost
+				totalIn += t.TokensIn
+				totalOut += t.TokensOut
+				switch t.Status {
+				case v1.TaskStatusCompleted:
+					completed++
+				case v1.TaskStatusFailed:
+					failed++
+				case v1.TaskStatusRunning:
+					running++
+				}
+			}
+			m.TotalCost = totalCost
+			m.TotalTokensIn = totalIn
+			m.TotalTokensOut = totalOut
+			m.TasksCompleted = completed
+			m.TasksFailed = failed
+			m.TasksRunning = running
+		}
+
+		result[name] = m
 	}
 	return result
 }
@@ -282,4 +441,15 @@ func unmarshalSpec(data string) (v1.AgentSpec, error) {
 		return spec, err
 	}
 	return spec, nil
+}
+
+// getAgentModel returns the provider and model name for a running agent.
+func (c *Controller) getAgentModel(agentName string) (provider, model string) {
+	c.mu.RLock()
+	ma, ok := c.agents[agentName]
+	c.mu.RUnlock()
+	if ok {
+		return ma.spec.Spec.Runtime.Model.Provider, ma.spec.Spec.Runtime.Model.Name
+	}
+	return "anthropic", "claude-sonnet-4" // default fallback
 }
