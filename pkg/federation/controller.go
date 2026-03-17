@@ -75,6 +75,7 @@ func (fc *FederationController) RegisterCompany(reg CompanyRegistration) (*Compa
 		Type:     CompanyType(reg.Type),
 		Status:   CompanyStatusOffline,
 		Agents:   reg.Agents,
+		APIKey:   GenerateAPIKey(),
 		JoinedAt: time.Now().UTC(),
 	}
 

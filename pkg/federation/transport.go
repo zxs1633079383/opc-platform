@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"time"
 
 	"go.uber.org/zap"
@@ -36,6 +37,7 @@ type CompanyStatusReport struct {
 type HTTPTransport struct {
 	client *http.Client
 	logger *zap.SugaredLogger
+	apiKey string
 }
 
 // NewHTTPTransport creates a new HTTPTransport.
@@ -48,16 +50,23 @@ func NewHTTPTransport(logger *zap.SugaredLogger) *HTTPTransport {
 	}
 }
 
+// SetAPIKey sets the API key used for HMAC-SHA256 request signing.
+func (t *HTTPTransport) SetAPIKey(key string) {
+	t.apiKey = key
+}
+
 // Send sends an HTTP request to the given endpoint.
 func (t *HTTPTransport) Send(endpoint, method, path string, body any) ([]byte, error) {
 	url := fmt.Sprintf("%s%s", endpoint, path)
 
+	var bodyBytes []byte
 	var reqBody io.Reader
 	if body != nil {
 		data, err := json.Marshal(body)
 		if err != nil {
 			return nil, fmt.Errorf("marshal request body: %w", err)
 		}
+		bodyBytes = data
 		reqBody = bytes.NewReader(data)
 	}
 
@@ -66,6 +75,14 @@ func (t *HTTPTransport) Send(endpoint, method, path string, body any) ([]byte, e
 		return nil, fmt.Errorf("create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+
+	// Sign request if apiKey is available.
+	if t.apiKey != "" {
+		ts := time.Now().Unix()
+		sig := SignRequest(bodyBytes, t.apiKey, ts)
+		req.Header.Set("X-OPC-Signature", sig)
+		req.Header.Set("X-OPC-Timestamp", strconv.FormatInt(ts, 10))
+	}
 
 	resp, err := t.client.Do(req)
 	if err != nil {

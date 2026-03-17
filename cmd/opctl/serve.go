@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/zlc-ai/opc-platform/internal/config"
 	"github.com/zlc-ai/opc-platform/pkg/cost"
+	"github.com/zlc-ai/opc-platform/pkg/federation"
 	"github.com/zlc-ai/opc-platform/pkg/gateway"
 	tgchannel "github.com/zlc-ai/opc-platform/pkg/gateway/telegram"
 	dcchannel "github.com/zlc-ai/opc-platform/pkg/gateway/discord"
@@ -119,8 +120,15 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// Start checkpoint loop (every 5 minutes).
 	// ctrl.StartCheckpointLoop(ctx, 5*time.Minute)
 
+	// Set cost tracker and recover agents from prior session.
+	ctrl.SetCostTracker(costMgr)
+	ctrl.RecoverAgents(ctx)
+
+	// Initialize federation controller.
+	fedCtrl := federation.NewController(logger)
+
 	// Start HTTP server.
-	srv := server.New(ctrl, costMgr, gw, server.Config{
+	srv := server.New(ctrl, costMgr, gw, fedCtrl, server.Config{
 		Port: servePort,
 		Host: serveHost,
 	}, logger)

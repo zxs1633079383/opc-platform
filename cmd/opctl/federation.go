@@ -24,7 +24,11 @@ var federationInitCmd = &cobra.Command{
 	RunE:  runFederationInit,
 }
 
+var federationInitName string
+
 func init() {
+	federationInitCmd.Flags().StringVar(&federationInitName, "name", "default", "federation name")
+
 	federationCmd.AddCommand(federationInitCmd)
 	federationCmd.AddCommand(federationAddCompanyCmd)
 	federationCmd.AddCommand(federationCompaniesCmd)
@@ -37,7 +41,7 @@ func runFederationInit(cmd *cobra.Command, args []string) error {
 	logger := ensureLogger()
 
 	_ = federation.NewController(logger)
-	fmt.Println("Federation controller initialized.")
+	fmt.Printf("Federation %q initialized.\n", federationInitName)
 	return nil
 }
 

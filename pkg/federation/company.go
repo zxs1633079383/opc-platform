@@ -29,6 +29,7 @@ type Company struct {
 	Type     CompanyType   `json:"type"`
 	Status   CompanyStatus `json:"status"`
 	Agents   []string      `json:"agents,omitempty"`
+	APIKey   string        `json:"apiKey,omitempty"`
 	JoinedAt time.Time     `json:"joinedAt"`
 }
 
