@@ -20,7 +20,10 @@ import (
 	"github.com/zlc-ai/opc-platform/pkg/federation"
 	"github.com/zlc-ai/opc-platform/pkg/gateway"
 	"github.com/zlc-ai/opc-platform/pkg/goal"
+	opctrace "github.com/zlc-ai/opc-platform/pkg/trace"
 	"github.com/zlc-ai/opc-platform/pkg/workflow"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 	"gopkg.in/yaml.v3"
 )
@@ -36,6 +39,10 @@ type Server struct {
 	config       Config
 	aiDecomposer *goal.AIDecomposer
 	retryQueue   *federation.RetryQueue
+
+	// federatedGoalRuns tracks running federated goals for dependency-aware dispatch.
+	federatedGoalRunsMu sync.RWMutex
+	federatedGoalRuns   map[string]*goal.FederatedGoalRun // goalID -> run
 }
 
 // Config holds server configuration.
@@ -63,14 +70,15 @@ func New(
 	}
 	adapter := &controllerAdapter{ctrl: ctrl}
 	return &Server{
-		controller:   ctrl,
-		costMgr:      costMgr,
-		gateway:      gw,
-		federation:   fedCtrl,
-		logger:       logger,
-		config:       config,
-		aiDecomposer: goal.NewAIDecomposer(adapter, logger),
-		retryQueue:   federation.NewRetryQueue(logger),
+		controller:        ctrl,
+		costMgr:           costMgr,
+		gateway:           gw,
+		federation:        fedCtrl,
+		logger:            logger,
+		config:            config,
+		aiDecomposer:      goal.NewAIDecomposer(adapter, logger),
+		retryQueue:        federation.NewRetryQueue(logger),
+		federatedGoalRuns: make(map[string]*goal.FederatedGoalRun),
 	}
 }
 
@@ -618,6 +626,7 @@ func (s *Server) runTask(c *gin.Context) {
 		CallbackURL string `json:"callbackURL,omitempty"`
 		GoalID      string `json:"goalId,omitempty"`
 		ProjectID   string `json:"projectId,omitempty"`
+		LineageJSON string `json:"lineage,omitempty"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: " + err.Error()})
@@ -634,8 +643,21 @@ func (s *Server) runTask(c *gin.Context) {
 		"goalId", req.GoalID, "projectId", req.ProjectID, "hasCallback", req.CallbackURL != "")
 	task := v1.TaskRecord{
 		ID: taskID, AgentName: req.Agent, Message: req.Message,
-		Status: v1.TaskStatusPending, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+		Status:      v1.TaskStatusPending,
+		GoalID:      req.GoalID,
+		ProjectID:   req.ProjectID,
+		LineageJSON: req.LineageJSON,
+		CreatedAt:   time.Now(), UpdatedAt: time.Now(),
 	}
+
+	ctx, span := opctrace.StartSpan(ctx, "runTask",
+		trace.WithAttributes(
+			attribute.String("task.id", taskID),
+			attribute.String("agent", req.Agent),
+			attribute.String("goal.id", req.GoalID),
+			attribute.String("project.id", req.ProjectID),
+		))
+	defer span.End()
 
 	if err := s.controller.Store().CreateTask(ctx, task); err != nil {
 		s.logger.Errorw("runTask: failed to create task", "taskId", taskID, "error", err)
@@ -660,9 +682,10 @@ func (s *Server) runTask(c *gin.Context) {
 		// If a callbackURL was provided, notify the originating OPC.
 		if req.CallbackURL != "" {
 			cb := FederationCallback{
-				GoalID:    req.GoalID,
-				ProjectID: req.ProjectID,
-				TaskID:    taskID,
+				GoalID:      req.GoalID,
+				ProjectID:   req.ProjectID,
+				TaskID:      taskID,
+				LineageJSON: req.LineageJSON,
 			}
 			if execErr != nil {
 				cb.Status = "failed"
@@ -1240,14 +1263,15 @@ func (s *Server) aggregateMetrics(c *gin.Context) {
 
 // FederationCallback is the payload sent by a remote OPC when a task completes.
 type FederationCallback struct {
-	GoalID    string  `json:"goalId"`
-	ProjectID string  `json:"projectId"`
-	TaskID    string  `json:"taskId"`
-	Status    string  `json:"status"` // "completed" | "failed" | "milestone"
-	Result    string  `json:"result,omitempty"`
-	TokensIn  int     `json:"tokensIn,omitempty"`
-	TokensOut int     `json:"tokensOut,omitempty"`
-	Cost      float64 `json:"cost,omitempty"`
+	GoalID      string  `json:"goalId"`
+	ProjectID   string  `json:"projectId"`
+	TaskID      string  `json:"taskId"`
+	Status      string  `json:"status"` // "completed" | "failed" | "milestone"
+	Result      string  `json:"result,omitempty"`
+	TokensIn    int     `json:"tokensIn,omitempty"`
+	TokensOut   int     `json:"tokensOut,omitempty"`
+	Cost        float64 `json:"cost,omitempty"`
+	LineageJSON string  `json:"lineage,omitempty"`
 }
 
 func (s *Server) federationCallback(c *gin.Context) {
@@ -1261,6 +1285,16 @@ func (s *Server) federationCallback(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "taskId and status are required"})
 		return
 	}
+
+	ctx := c.Request.Context()
+	_, cbSpan := opctrace.StartSpan(ctx, "federationCallback",
+		trace.WithAttributes(
+			attribute.String("goal.id", cb.GoalID),
+			attribute.String("project.id", cb.ProjectID),
+			attribute.String("task.id", cb.TaskID),
+			attribute.String("status", cb.Status),
+		))
+	defer cbSpan.End()
 
 	s.logger.Infow("federation callback received",
 		"goalId", cb.GoalID,
@@ -1287,11 +1321,131 @@ func (s *Server) federationCallback(c *gin.Context) {
 			"taskId", cb.TaskID,
 			"status", cb.Status,
 		)
+		// Advance the federated goal: mark project done, dispatch next layer if ready.
+		s.advanceFederatedGoal(cb)
 	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": fmt.Sprintf("callback processed for task %s", cb.TaskID),
 	})
+}
+
+// advanceFederatedGoal updates project status and dispatches the next layer when dependencies are met.
+func (s *Server) advanceFederatedGoal(cb FederationCallback) {
+	if cb.GoalID == "" {
+		return
+	}
+
+	s.federatedGoalRunsMu.Lock()
+	defer s.federatedGoalRunsMu.Unlock()
+
+	run, ok := s.federatedGoalRuns[cb.GoalID]
+	if !ok {
+		s.logger.Debugw("no federated goal run found for callback", "goalId", cb.GoalID)
+		return
+	}
+
+	// Find the project by projectID and mark it.
+	var completedProjectName string
+	for name, proj := range run.Projects {
+		if proj.ID == cb.ProjectID {
+			completedProjectName = name
+			if cb.Status == "completed" {
+				proj.Status = goal.ProjectCompleted
+				proj.Result = cb.Result
+				run.Results[name] = cb.Result
+			} else {
+				proj.Status = goal.ProjectFailed
+				proj.Result = cb.Result
+			}
+			break
+		}
+	}
+
+	if completedProjectName == "" {
+		s.logger.Warnw("callback projectId not found in goal run",
+			"goalId", cb.GoalID, "projectId", cb.ProjectID)
+		return
+	}
+
+	s.logger.Infow("project status updated",
+		"goalId", cb.GoalID,
+		"project", completedProjectName,
+		"status", cb.Status,
+	)
+
+	// Check if any failed project should halt the goal.
+	if cb.Status == "failed" {
+		// Check if any downstream project depends on the failed one.
+		for _, proj := range run.Projects {
+			for _, dep := range proj.Dependencies {
+				if dep == completedProjectName && proj.Status == goal.ProjectPending {
+					proj.Status = goal.ProjectFailed
+					proj.Result = fmt.Sprintf("upstream dependency %q failed", completedProjectName)
+					s.logger.Warnw("cascading failure to dependent project",
+						"goalId", cb.GoalID,
+						"project", proj.Name,
+						"failedDep", completedProjectName,
+					)
+				}
+			}
+		}
+	}
+
+	// Find projects whose dependencies are now all satisfied and still pending.
+	var readyToDispatch []*goal.Project
+	for _, proj := range run.Projects {
+		if proj.Status != goal.ProjectPending {
+			continue
+		}
+		allDepsMet := true
+		for _, dep := range proj.Dependencies {
+			depProj, exists := run.Projects[dep]
+			if !exists || depProj.Status != goal.ProjectCompleted {
+				allDepsMet = false
+				break
+			}
+		}
+		if allDepsMet {
+			readyToDispatch = append(readyToDispatch, proj)
+		}
+	}
+
+	if len(readyToDispatch) > 0 {
+		s.logger.Infow("dispatching next projects",
+			"goalId", cb.GoalID,
+			"projects", len(readyToDispatch),
+		)
+		// Build agentForProject map (empty — will use company defaults).
+		agentMap := make(map[string]string)
+		s.dispatchProjectLayer(run, readyToDispatch, agentMap)
+	}
+
+	// Check if all projects are terminal (completed or failed).
+	allDone := true
+	allSucceeded := true
+	for _, proj := range run.Projects {
+		switch proj.Status {
+		case goal.ProjectCompleted:
+			// ok
+		case goal.ProjectFailed:
+			allSucceeded = false
+		default:
+			allDone = false
+		}
+	}
+
+	if allDone {
+		if allSucceeded {
+			run.Status = goal.GoalCompleted
+		} else {
+			run.Status = goal.GoalFailed
+		}
+		s.logger.Infow("federated goal finished",
+			"goalId", cb.GoalID,
+			"status", run.Status,
+		)
+	}
 }
 
 // sendCallback posts a FederationCallback to a remote URL.
@@ -1331,6 +1485,15 @@ func (s *Server) sendCallback(callbackURL string, cb FederationCallback) {
 
 // ---- federated goals ----
 
+// federatedGoalProject defines a project in the federated goal request.
+type federatedGoalProject struct {
+	Name         string   `json:"name"`
+	CompanyID    string   `json:"companyId"`
+	Agent        string   `json:"agent,omitempty"`
+	Description  string   `json:"description,omitempty"`
+	Dependencies []string `json:"dependencies,omitempty"`
+}
+
 func (s *Server) createFederatedGoal(c *gin.Context) {
 	if s.federation == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "federation not initialized"})
@@ -1338,93 +1501,221 @@ func (s *Server) createFederatedGoal(c *gin.Context) {
 	}
 
 	var req struct {
-		Name        string   `json:"name"`
-		Description string   `json:"description"`
-		Companies   []string `json:"companies"` // company IDs
+		Name        string                 `json:"name"`
+		Description string                 `json:"description"`
+		Companies   []string               `json:"companies,omitempty"` // legacy: simple mode
+		Projects    []federatedGoalProject `json:"projects,omitempty"` // new: dependency-aware mode
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: " + err.Error()})
 		return
 	}
-	if req.Name == "" || len(req.Companies) == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "name and at least one company are required"})
+	if req.Name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "name is required"})
 		return
 	}
 
 	goalID := fmt.Sprintf("goal-%d", time.Now().UnixNano()/1e6)
 	callbackURL := fmt.Sprintf("http://%s:%d/api/federation/callback", s.config.Host, s.config.Port)
-	s.logger.Infow("createFederatedGoal", "goalId", goalID, "name", req.Name, "companies", req.Companies)
 
-	type dispatchResult struct {
-		CompanyID   string `json:"companyId"`
-		CompanyName string `json:"companyName"`
-		Status      string `json:"status"`
-		Error       string `json:"error,omitempty"`
+	// If legacy mode (just companies, no projects), convert to simple projects.
+	if len(req.Projects) == 0 && len(req.Companies) > 0 {
+		for _, companyID := range req.Companies {
+			req.Projects = append(req.Projects, federatedGoalProject{
+				Name:      companyID,
+				CompanyID: companyID,
+			})
+		}
 	}
 
-	results := make([]dispatchResult, 0, len(req.Companies))
+	if len(req.Projects) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "at least one project or company is required"})
+		return
+	}
 
-	for _, companyID := range req.Companies {
-		company, err := s.federation.GetCompany(companyID)
+	// Build goal.Project list for DAG validation.
+	goalProjects := make([]*goal.Project, 0, len(req.Projects))
+	projectMap := make(map[string]*goal.Project, len(req.Projects))
+	for _, rp := range req.Projects {
+		p := &goal.Project{
+			ID:           fmt.Sprintf("proj-%s-%s", goalID, rp.Name),
+			GoalID:       goalID,
+			CompanyID:    rp.CompanyID,
+			Name:         rp.Name,
+			Description:  rp.Description,
+			Dependencies: rp.Dependencies,
+			Status:       goal.ProjectPending,
+		}
+		goalProjects = append(goalProjects, p)
+		projectMap[rp.Name] = p
+	}
+
+	// Validate DAG: no cycles, no missing deps.
+	if err := goal.ValidateProjectDAG(goalProjects); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid project dependencies: " + err.Error()})
+		return
+	}
+
+	// Build execution layers.
+	layers, err := goal.BuildProjectLayers(goalProjects)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "failed to build dependency graph: " + err.Error()})
+		return
+	}
+
+	ctx := c.Request.Context()
+	ctx, span := opctrace.StartSpan(ctx, "createFederatedGoal",
+		trace.WithAttributes(
+			attribute.String("goal.id", goalID),
+			attribute.String("goal.name", req.Name),
+			attribute.Int("projects.count", len(req.Projects)),
+		))
+	defer span.End()
+	_ = ctx // ctx available for future child spans
+
+	s.logger.Infow("createFederatedGoal",
+		"goalId", goalID,
+		"name", req.Name,
+		"projects", len(req.Projects),
+		"layers", len(layers),
+	)
+
+	// Store the agent preference from request into project map for dispatch.
+	agentForProject := make(map[string]string, len(req.Projects))
+	for _, rp := range req.Projects {
+		agentForProject[rp.Name] = rp.Agent
+	}
+
+	// Create the run tracker.
+	run := &goal.FederatedGoalRun{
+		GoalID:      goalID,
+		GoalName:    req.Name,
+		Description: req.Description,
+		CallbackURL: callbackURL,
+		Status:      goal.GoalInProgress,
+		Projects:    projectMap,
+		Layers:      layers,
+		Results:     make(map[string]string),
+		CreatedAt:   time.Now(),
+	}
+
+	s.federatedGoalRunsMu.Lock()
+	s.federatedGoalRuns[goalID] = run
+	s.federatedGoalRunsMu.Unlock()
+
+	// Dispatch the first layer (projects with no dependencies).
+	dispatchResults := s.dispatchProjectLayer(run, layers[0], agentForProject)
+
+	c.JSON(http.StatusAccepted, gin.H{
+		"goalId":      goalID,
+		"name":        req.Name,
+		"description": req.Description,
+		"layers":      len(layers),
+		"dispatched":  dispatchResults,
+		"callbackURL": callbackURL,
+	})
+}
+
+// dispatchProjectLayer sends projects in a single DAG layer to their target companies.
+func (s *Server) dispatchProjectLayer(
+	run *goal.FederatedGoalRun,
+	layer []*goal.Project,
+	agentForProject map[string]string,
+) []gin.H {
+	results := make([]gin.H, 0, len(layer))
+
+	for _, proj := range layer {
+		company, err := s.federation.GetCompany(proj.CompanyID)
 		if err != nil {
-			results = append(results, dispatchResult{
-				CompanyID: companyID,
-				Status:    "error",
-				Error:     err.Error(),
+			proj.Status = goal.ProjectFailed
+			results = append(results, gin.H{
+				"project": proj.Name, "companyId": proj.CompanyID,
+				"status": "error", "error": err.Error(),
 			})
 			continue
 		}
 
 		if company.Status != federation.CompanyStatusOnline {
-			results = append(results, dispatchResult{
-				CompanyID:   company.ID,
-				CompanyName: company.Name,
-				Status:      "skipped",
-				Error:       fmt.Sprintf("company is %s", company.Status),
+			proj.Status = goal.ProjectFailed
+			results = append(results, gin.H{
+				"project": proj.Name, "companyId": proj.CompanyID,
+				"status": "skipped", "error": fmt.Sprintf("company is %s", company.Status),
 			})
 			continue
 		}
 
-		// Pick the first agent or use a default.
-		agent := "default"
-		if len(company.Agents) > 0 {
+		// Determine agent: request > company default > "default".
+		agent := agentForProject[proj.Name]
+		if agent == "" && len(company.Agents) > 0 {
 			agent = company.Agents[0]
 		}
+		if agent == "" {
+			agent = "default"
+		}
+
+		// Build message, injecting upstream results as context.
+		message := fmt.Sprintf("[Federated Goal: %s]\n\n%s", run.GoalName, run.Description)
+		if proj.Description != "" {
+			message += fmt.Sprintf("\n\n## Your Task\n%s", proj.Description)
+		}
+		// Inject upstream dependency results.
+		for _, depName := range proj.Dependencies {
+			if result, ok := run.Results[depName]; ok && result != "" {
+				message += fmt.Sprintf("\n\n## Upstream Output from [%s]\n%s", depName, result)
+			}
+		}
+
+		// Build lineage from completed upstream projects.
+		var upstreamLineage []goal.LineageRef
+		for _, depName := range proj.Dependencies {
+			if depProj, ok := run.Projects[depName]; ok {
+				upstreamLineage = goal.AppendLineage(upstreamLineage, goal.LineageRef{
+					GoalID:      run.GoalID,
+					ProjectName: depName,
+					IssueID:     depProj.ID,
+					OPCNode:     depProj.CompanyID,
+					Label:       depProj.Name,
+				})
+			}
+		}
+		lineageStr, _ := goal.LineageToJSON(upstreamLineage)
 
 		payload := map[string]interface{}{
 			"agent":       agent,
-			"message":     fmt.Sprintf("[Federated Goal: %s] %s", req.Name, req.Description),
-			"callbackURL": callbackURL,
-			"goalId":      goalID,
-			"projectId":   fmt.Sprintf("proj-%s-%s", goalID, companyID),
+			"message":     message,
+			"callbackURL": run.CallbackURL,
+			"goalId":      run.GoalID,
+			"projectId":   proj.ID,
+			"lineage":     lineageStr,
 		}
 
 		transport := s.federation.Transport()
 		_, sendErr := transport.Send(company.Endpoint, "POST", "/api/run", payload)
 		if sendErr != nil {
-			results = append(results, dispatchResult{
-				CompanyID:   company.ID,
-				CompanyName: company.Name,
-				Status:      "error",
-				Error:       sendErr.Error(),
+			proj.Status = goal.ProjectFailed
+			results = append(results, gin.H{
+				"project": proj.Name, "companyId": proj.CompanyID,
+				"status": "error", "error": sendErr.Error(),
 			})
 		} else {
-			results = append(results, dispatchResult{
-				CompanyID:   company.ID,
-				CompanyName: company.Name,
-				Status:      "dispatched",
+			proj.Status = goal.ProjectRunning
+			results = append(results, gin.H{
+				"project": proj.Name, "companyId": proj.CompanyID,
+				"status": "dispatched",
 			})
 		}
+
+		s.logger.Infow("dispatched project",
+			"goalId", run.GoalID,
+			"project", proj.Name,
+			"company", proj.CompanyID,
+			"agent", agent,
+			"dependencies", proj.Dependencies,
+			"status", proj.Status,
+		)
 	}
 
-	s.logger.Infow("createFederatedGoal completed", "goalId", goalID, "dispatched", len(results))
-	c.JSON(http.StatusAccepted, gin.H{
-		"goalId":      goalID,
-		"name":        req.Name,
-		"description": req.Description,
-		"dispatched":  results,
-		"callbackURL": callbackURL,
-	})
+	return results
 }
 
 // ---- goals CRUD ----
