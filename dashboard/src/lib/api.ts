@@ -211,15 +211,15 @@ export async function toggleWorkflow(name: string, enabled: boolean): Promise<vo
 // ---- Goals ----
 
 export async function fetchGoals(): Promise<Goal[]> {
-  return fetchJson<Goal[]>(`${API_BASE}/goals`)
+  return fetchJson<Goal[]>('/goals')
 }
 
 export async function fetchGoalProjects(goalId: string): Promise<Project[]> {
-  return fetchJson<Project[]>(`${API_BASE}/goals/${goalId}/projects`)
+  return fetchJson<Project[]>(`/goals/${goalId}/projects`)
 }
 
 export async function fetchGoalStats(goalId: string): Promise<HierarchyStats> {
-  return fetchJson<HierarchyStats>(`${API_BASE}/goals/${goalId}/stats`)
+  return fetchJson<HierarchyStats>(`/goals/${goalId}/stats`)
 }
 
 export async function createGoal(data: {
@@ -282,21 +282,21 @@ export async function fetchTaskLogs(taskId: string): Promise<string> {
 }
 
 export async function fetchProjects(): Promise<Project[]> {
-  return fetchJson<Project[]>(`${API_BASE}/projects`)
+  return fetchJson<Project[]>('/projects')
 }
 
 export async function fetchIssues(): Promise<Issue[]> {
-  return fetchJson<Issue[]>(`${API_BASE}/issues`)
+  return fetchJson<Issue[]>('/issues')
 }
 
 export async function fetchWorkflowRuns(name: string): Promise<WorkflowRun[]> {
-  return fetchJson<WorkflowRun[]>(`${API_BASE}/workflows/${name}/runs`)
+  return fetchJson<WorkflowRun[]>(`/workflows/${name}/runs`)
 }
 
 // ---- Settings ----
 
 export async function fetchSettings(): Promise<Record<string, unknown>> {
-  return fetchJson<Record<string, unknown>>(`${API_BASE}/settings`)
+  return fetchJson<Record<string, unknown>>('/settings')
 }
 
 export async function updateSettings(settings: Record<string, unknown>): Promise<void> {

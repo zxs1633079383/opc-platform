@@ -815,13 +815,20 @@ func (s *Server) clusterMetrics(c *gin.Context) {
 		}
 	}
 
-	var monthCost, dailyBudget, monthlyBudget float64
+	// Calculate month cost from tasks.
+	startOfMonth := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
+	var monthCost float64
+	for _, t := range tasks {
+		if !t.CreatedAt.Before(startOfMonth) {
+			monthCost += t.Cost
+		}
+	}
+
+	var dailyBudget, monthlyBudget float64
 	if s.costMgr != nil {
 		status := s.costMgr.GetBudgetStatus()
-		monthCost = status.MonthlySpent
 		dailyBudget = status.DailyLimit
 		monthlyBudget = status.MonthlyLimit
-		todayCost = status.DailySpent
 	}
 
 	c.JSON(http.StatusOK, gin.H{
