@@ -177,8 +177,9 @@ type TaskRecord struct {
 	Cost      float64    `json:"cost,omitempty"`
 	IssueID   string     `json:"issueId,omitempty"`
 	ProjectID string     `json:"projectId,omitempty"`
-	GoalID    string     `json:"goalId,omitempty"`
-	CreatedAt time.Time  `json:"createdAt"`
+	GoalID      string     `json:"goalId,omitempty"`
+	LineageJSON string     `json:"lineage,omitempty"`
+	CreatedAt   time.Time  `json:"createdAt"`
 	UpdatedAt time.Time  `json:"updatedAt"`
 	StartedAt *time.Time `json:"startedAt,omitempty"`
 	EndedAt   *time.Time `json:"endedAt,omitempty"`
@@ -237,12 +238,17 @@ type IssueRecord struct {
 	Name        string    `json:"name"`
 	ProjectID   string    `json:"projectId"`
 	Description string    `json:"description"`
-	AgentRef    string    `json:"agentRef,omitempty"`
-	Status      string    `json:"status"`
-	SpecYAML    string    `json:"specYaml,omitempty"`
-	TokensIn    int       `json:"tokensIn"`
-	TokensOut   int       `json:"tokensOut"`
-	Cost        float64   `json:"cost"`
+	AgentRef    string   `json:"agentRef,omitempty"`
+	Status      string   `json:"status"`
+	SpecYAML    string   `json:"specYaml,omitempty"`
+	GoalID      string   `json:"goalId,omitempty"`
+	TraceID     string   `json:"traceId,omitempty"`
+	SpanID      string   `json:"spanId,omitempty"`
+	ParentSpans []string `json:"parentSpans,omitempty"`
+	LineageJSON string   `json:"lineage,omitempty"`
+	TokensIn    int      `json:"tokensIn"`
+	TokensOut   int      `json:"tokensOut"`
+	Cost        float64  `json:"cost"`
 	CreatedAt   time.Time `json:"createdAt"`
 	UpdatedAt   time.Time `json:"updatedAt"`
 }
