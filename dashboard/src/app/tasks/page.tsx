@@ -7,6 +7,7 @@ import { clsx } from 'clsx'
 import { formatDistanceToNow } from 'date-fns'
 import { fetchTasks, fetchGoals, fetchProjects, fetchIssues } from '@/lib/api'
 import { useSearchParams } from 'next/navigation'
+import { Suspense } from 'react'
 import type { Task, Goal, Project, Issue } from '@/types'
 
 const statusTabs = [
@@ -47,6 +48,14 @@ function getStatusLabel(status: string): string {
 }
 
 export default function TasksPage() {
+  return (
+    <Suspense fallback={<div className="p-6 text-gray-400">Loading...</div>}>
+      <TasksPageInner />
+    </Suspense>
+  )
+}
+
+function TasksPageInner() {
   const searchParams = useSearchParams()
   const initialStatus = searchParams.get('status') || 'all'
 
@@ -710,7 +719,6 @@ export default function TasksPage() {
           )}
 
         </div>
-      )}
       )}
 
       {/* Summary */}
