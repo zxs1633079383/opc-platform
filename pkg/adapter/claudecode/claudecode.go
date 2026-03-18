@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"go.uber.org/zap"
 	v1 "github.com/zlc-ai/opc-platform/api/v1"
 	"github.com/zlc-ai/opc-platform/pkg/adapter"
 )
@@ -25,6 +26,7 @@ type Adapter struct {
 	metrics v1.AgentMetrics
 	spec    v1.AgentSpec
 	startAt time.Time
+	logger  *zap.SugaredLogger
 
 	// activeCmd tracks the currently running process (for Stream or long Execute).
 	activeCmd *exec.Cmd
@@ -32,8 +34,10 @@ type Adapter struct {
 
 // New creates a new Claude Code adapter.
 func New() adapter.Adapter {
+	l, _ := zap.NewProduction()
 	return &Adapter{
-		phase: v1.AgentPhaseCreated,
+		phase:  v1.AgentPhaseCreated,
+		logger: l.Sugar().Named("claudecode"),
 	}
 }
 
@@ -171,9 +175,12 @@ type claudeCodeStreamEvent struct {
 }
 
 func (a *Adapter) Execute(ctx context.Context, task v1.TaskRecord) (adapter.ExecuteResult, error) {
+	execStart := time.Now()
+	a.logger.Infow("Execute", "taskId", task.ID, "agentName", a.spec.Metadata.Name)
 	a.mu.RLock()
 	if a.phase != v1.AgentPhaseRunning {
 		a.mu.RUnlock()
+		a.logger.Warnw("Execute: agent not running", "taskId", task.ID, "phase", a.phase)
 		return adapter.ExecuteResult{}, fmt.Errorf("agent not running (phase: %s)", a.phase)
 	}
 	a.mu.RUnlock()
@@ -214,6 +221,7 @@ func (a *Adapter) Execute(ctx context.Context, task v1.TaskRecord) (adapter.Exec
 		if errMsg == "" {
 			errMsg = err.Error()
 		}
+		a.logger.Errorw("Execute: claude process failed", "taskId", task.ID, "error", errMsg, "duration", time.Since(execStart))
 		return adapter.ExecuteResult{}, fmt.Errorf("claude execute: %s", errMsg)
 	}
 
@@ -264,6 +272,9 @@ func (a *Adapter) Execute(ctx context.Context, task v1.TaskRecord) (adapter.Exec
 	a.metrics.TotalTokensOut += result.TokensOut
 	a.mu.Unlock()
 
+	a.logger.Infow("Execute completed", "taskId", task.ID,
+		"tokensIn", result.TokensIn, "tokensOut", result.TokensOut,
+		"cost", result.Cost, "duration", time.Since(execStart))
 	return result, nil
 }
 

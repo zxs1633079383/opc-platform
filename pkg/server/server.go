@@ -310,6 +310,7 @@ func (s *Server) clusterStatus(c *gin.Context) {
 // ---- apply ----
 
 func (s *Server) applyResource(c *gin.Context) {
+	start := time.Now()
 	data, err := io.ReadAll(c.Request.Body)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "read body: " + err.Error()})
@@ -321,6 +322,8 @@ func (s *Server) applyResource(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "parse YAML: " + err.Error()})
 		return
 	}
+
+	s.logger.Infow("applyResource", "kind", res.Kind, "bodySize", len(data))
 
 	ctx := c.Request.Context()
 
@@ -404,12 +407,14 @@ func (s *Server) applyResource(c *gin.Context) {
 		}
 
 		goalID := uuid.New().String()
+		s.logger.Infow("applyResource: creating goal", "goalId", goalID, "name", raw.Metadata.Name, "autoDecompose", raw.Spec.AutoDecompose)
 		goalRecord := v1.GoalRecord{
 			ID: goalID, Name: raw.Metadata.Name, Description: raw.Spec.Description,
 			Owner: raw.Spec.Owner, Deadline: raw.Spec.Deadline, Status: "active",
 			SpecYAML: string(data),
 		}
 		if err := s.controller.Store().CreateGoal(ctx, goalRecord); err != nil {
+			s.logger.Errorw("applyResource: failed to create goal", "goalId", goalID, "error", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
@@ -497,6 +502,9 @@ func (s *Server) applyResource(c *gin.Context) {
 		if projectCount > 0 {
 			msg += fmt.Sprintf(" (decomposed: %d projects, %d tasks, %d issues, %d dispatched)", projectCount, taskCount, issueCount, dispatchedTasks)
 		}
+		s.logger.Infow("applyResource: goal created",
+			"goalId", goalID, "projects", projectCount, "tasks", taskCount,
+			"issues", issueCount, "dispatched", dispatchedTasks, "duration", time.Since(start))
 		c.JSON(http.StatusOK, gin.H{"message": msg})
 
 	case "Company":
@@ -622,22 +630,32 @@ func (s *Server) runTask(c *gin.Context) {
 
 	ctx := c.Request.Context()
 	taskID := fmt.Sprintf("task-%d", time.Now().UnixNano()/1e6)
+	s.logger.Infow("runTask", "taskId", taskID, "agentName", req.Agent,
+		"goalId", req.GoalID, "projectId", req.ProjectID, "hasCallback", req.CallbackURL != "")
 	task := v1.TaskRecord{
 		ID: taskID, AgentName: req.Agent, Message: req.Message,
 		Status: v1.TaskStatusPending, CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}
 
 	if err := s.controller.Store().CreateTask(ctx, task); err != nil {
+		s.logger.Errorw("runTask: failed to create task", "taskId", taskID, "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
 	// Execute asynchronously so the caller can poll for status.
 	go func() {
+		execStart := time.Now()
 		bgCtx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 		defer cancel()
 
 		result, execErr := s.controller.ExecuteTask(bgCtx, task)
+		if execErr != nil {
+			s.logger.Errorw("runTask: execution failed", "taskId", taskID, "agentName", req.Agent, "error", execErr, "duration", time.Since(execStart))
+		} else {
+			s.logger.Infow("runTask: execution completed", "taskId", taskID, "agentName", req.Agent,
+				"tokensIn", result.TokensIn, "tokensOut", result.TokensOut, "duration", time.Since(execStart))
+		}
 
 		// If a callbackURL was provided, notify the originating OPC.
 		if req.CallbackURL != "" {
@@ -1328,6 +1346,7 @@ func (s *Server) createFederatedGoal(c *gin.Context) {
 
 	goalID := fmt.Sprintf("goal-%d", time.Now().UnixNano()/1e6)
 	callbackURL := fmt.Sprintf("http://%s:%d/api/federation/callback", s.config.Host, s.config.Port)
+	s.logger.Infow("createFederatedGoal", "goalId", goalID, "name", req.Name, "companies", req.Companies)
 
 	type dispatchResult struct {
 		CompanyID   string `json:"companyId"`
@@ -1391,6 +1410,7 @@ func (s *Server) createFederatedGoal(c *gin.Context) {
 		}
 	}
 
+	s.logger.Infow("createFederatedGoal completed", "goalId", goalID, "dispatched", len(results))
 	c.JSON(http.StatusAccepted, gin.H{
 		"goalId":      goalID,
 		"name":        req.Name,
@@ -1422,6 +1442,7 @@ func (s *Server) getGoal(c *gin.Context) {
 }
 
 func (s *Server) createGoal(c *gin.Context) {
+	start := time.Now()
 	var req struct {
 		v1.GoalRecord
 		AutoDecompose bool                     `json:"autoDecompose"`
@@ -1436,9 +1457,12 @@ func (s *Server) createGoal(c *gin.Context) {
 	if g.ID == "" { g.ID = uuid.New().String() }
 	if g.Status == "" { g.Status = "active" }
 
+	s.logger.Infow("createGoal", "goalId", g.ID, "name", g.Name, "autoDecompose", req.AutoDecompose)
+
 	ctx := c.Request.Context()
 
 	if err := s.controller.Store().CreateGoal(ctx, g); err != nil {
+		s.logger.Errorw("createGoal: failed to store goal", "goalId", g.ID, "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -1496,10 +1520,12 @@ func (s *Server) createGoal(c *gin.Context) {
 		g.Phase = v1.GoalPhaseInProgress
 		g.Status = "in_progress"
 		s.controller.Store().UpdateGoal(ctx, g)
+		s.logger.Infow("createGoal: auto-decompose dispatched", "goalId", g.ID, "status", "in_progress", "duration", time.Since(start))
 		c.JSON(http.StatusAccepted, g)
 		return
 	}
 
+	s.logger.Infow("createGoal completed", "goalId", g.ID, "duration", time.Since(start))
 	c.JSON(http.StatusCreated, g)
 }
 
@@ -1712,9 +1738,11 @@ func (s *Server) toggleWorkflow(c *gin.Context) {
 		wf.Enabled = *body.Enabled
 	}
 	if err := s.controller.Store().UpdateWorkflow(ctx, wf); err != nil {
+		s.logger.Errorw("toggleWorkflow: failed to update", "name", name, "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	s.logger.Infow("toggleWorkflow", "name", wf.Name, "enabled", wf.Enabled)
 	c.JSON(http.StatusOK, gin.H{"name": wf.Name, "enabled": wf.Enabled})
 }
 
@@ -1834,10 +1862,11 @@ func countTaskStatus(tasks []v1.TaskRecord, status v1.TaskStatus) int {
 // ---- auto-create agent ----
 
 func (s *Server) ensureAgent(ctx context.Context, name string) {
+	start := time.Now()
 	if _, err := s.controller.GetAgent(ctx, name); err == nil {
 		return // Already exists
 	}
-	s.logger.Infow("auto-creating agent", "name", name)
+	s.logger.Infow("ensureAgent: auto-creating agent", "agentName", name)
 	spec := v1.AgentSpec{
 		APIVersion: v1.APIVersion, Kind: v1.KindAgentSpec,
 		Metadata: v1.Metadata{Name: name},
@@ -1853,6 +1882,8 @@ func (s *Server) ensureAgent(ctx context.Context, name string) {
 		return
 	}
 	if err := s.controller.StartAgent(ctx, name); err != nil {
-		s.logger.Warnw("failed to auto-start agent", "name", name, "error", err)
+		s.logger.Warnw("ensureAgent: failed to auto-start agent", "agentName", name, "error", err)
+	} else {
+		s.logger.Infow("ensureAgent completed", "agentName", name, "duration", time.Since(start))
 	}
 }

@@ -48,7 +48,7 @@ func (q *RetryQueue) Enqueue(url string, payload []byte) {
 		CreatedAt:   time.Now(),
 	}
 	q.entries = append(q.entries, entry)
-	q.logger.Infow("enqueued retry", "url", url, "id", entry.ID)
+	q.logger.Infow("Enqueue", "id", entry.ID, "url", url, "payloadSize", len(payload), "queueLen", len(q.entries))
 }
 
 // ProcessLoop runs a background loop that retries queued requests every 5 seconds.
@@ -84,7 +84,7 @@ func (q *RetryQueue) processOnce() {
 		if err := q.send(e); err != nil {
 			e.Attempts++
 			if e.Attempts >= e.MaxAttempts {
-				q.logger.Warnw("retry exhausted, dropping", "id", e.ID, "url", e.URL)
+				q.logger.Warnw("retry exhausted, dropping", "id", e.ID, "url", e.URL, "totalAttempts", e.Attempts)
 				continue
 			}
 			backoff := time.Duration(1<<uint(e.Attempts)) * time.Second
@@ -95,9 +95,11 @@ func (q *RetryQueue) processOnce() {
 			q.mu.Lock()
 			q.entries = append(q.entries, e)
 			q.mu.Unlock()
-			q.logger.Infow("retry scheduled", "id", e.ID, "attempt", e.Attempts, "nextRetry", e.NextRetry)
+			q.logger.Warnw("retry failed, rescheduled",
+				"id", e.ID, "url", e.URL, "attempt", e.Attempts,
+				"remaining", e.MaxAttempts-e.Attempts, "nextRetry", e.NextRetry, "error", err)
 		} else {
-			q.logger.Infow("retry succeeded", "id", e.ID, "url", e.URL)
+			q.logger.Infow("retry succeeded", "id", e.ID, "url", e.URL, "attempt", e.Attempts)
 		}
 	}
 }

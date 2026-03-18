@@ -61,20 +61,27 @@ func (c *Controller) SetCostTracker(tracker *cost.Tracker) {
 // RecoverAgents restarts all agents that were previously in Running phase.
 // Call this on daemon startup to restore agent state from a prior session.
 func (c *Controller) RecoverAgents(ctx context.Context) {
+	start := time.Now()
+	c.logger.Infow("RecoverAgents: starting agent recovery")
 	agents, err := c.store.ListAgents(ctx)
 	if err != nil {
-		c.logger.Errorw("failed to list agents for recovery", "error", err)
+		c.logger.Errorw("RecoverAgents: failed to list agents", "error", err)
 		return
 	}
 
+	var recovered, failed int
 	for _, record := range agents {
 		if record.Phase == v1.AgentPhaseRunning || record.Phase == v1.AgentPhaseStarting {
-			c.logger.Infow("recovering agent", "name", record.Name, "type", record.Type)
+			c.logger.Infow("RecoverAgents: recovering agent", "agentName", record.Name, "type", record.Type)
 			if err := c.StartAgent(ctx, record.Name); err != nil {
-				c.logger.Warnw("failed to recover agent", "name", record.Name, "error", err)
+				c.logger.Warnw("RecoverAgents: failed to recover agent", "agentName", record.Name, "error", err)
+				failed++
+			} else {
+				recovered++
 			}
 		}
 	}
+	c.logger.Infow("RecoverAgents completed", "recovered", recovered, "failed", failed, "duration", time.Since(start))
 }
 
 // Apply creates or updates an Agent from an AgentSpec.
@@ -120,8 +127,11 @@ func (c *Controller) Apply(ctx context.Context, spec v1.AgentSpec) error {
 
 // StartAgent starts an agent by name.
 func (c *Controller) StartAgent(ctx context.Context, name string) error {
+	start := time.Now()
+	c.logger.Infow("StartAgent", "agentName", name)
 	record, err := c.store.GetAgent(ctx, name)
 	if err != nil {
+		c.logger.Errorw("StartAgent: agent not found", "agentName", name, "error", err)
 		return fmt.Errorf("get agent %q: %w", name, err)
 	}
 
@@ -143,6 +153,7 @@ func (c *Controller) StartAgent(ctx context.Context, name string) error {
 		record.Phase = v1.AgentPhaseFailed
 		record.Message = err.Error()
 		c.store.UpdateAgent(ctx, record)
+		c.logger.Errorw("StartAgent: adapter start failed", "agentName", name, "error", err, "duration", time.Since(start))
 		return fmt.Errorf("start agent %q: %w", name, err)
 	}
 
@@ -154,12 +165,14 @@ func (c *Controller) StartAgent(ctx context.Context, name string) error {
 	record.Message = ""
 	c.store.UpdateAgent(ctx, record)
 
-	c.logger.Infow("agent started", "name", name)
+	c.logger.Infow("StartAgent completed", "agentName", name, "status", v1.AgentPhaseRunning, "duration", time.Since(start))
 	return nil
 }
 
 // StopAgent stops a running agent.
 func (c *Controller) StopAgent(ctx context.Context, name string) error {
+	start := time.Now()
+	c.logger.Infow("StopAgent", "agentName", name)
 	c.mu.Lock()
 	ma, ok := c.agents[name]
 	if ok {
@@ -168,6 +181,7 @@ func (c *Controller) StopAgent(ctx context.Context, name string) error {
 	c.mu.Unlock()
 
 	if !ok {
+		c.logger.Warnw("StopAgent: agent not running", "agentName", name)
 		return fmt.Errorf("agent %q is not running", name)
 	}
 
@@ -182,7 +196,7 @@ func (c *Controller) StopAgent(ctx context.Context, name string) error {
 		c.store.UpdateAgent(ctx, record)
 	}
 
-	c.logger.Infow("agent stopped", "name", name)
+	c.logger.Infow("StopAgent completed", "agentName", name, "status", v1.AgentPhaseStopped, "duration", time.Since(start))
 	return nil
 }
 
@@ -232,10 +246,17 @@ func (c *Controller) GetAdapter(name string) (adapter.Adapter, error) {
 
 // ExecuteTask runs a task against a named agent.
 func (c *Controller) ExecuteTask(ctx context.Context, task v1.TaskRecord) (adapter.ExecuteResult, error) {
+	execStart := time.Now()
+	c.logger.Infow("ExecuteTask", "taskId", task.ID, "agentName", task.AgentName,
+		"goalId", task.GoalID, "projectId", task.ProjectID, "issueId", task.IssueID)
 	// Check budget before execution.
 	if c.costMgr != nil {
 		status := c.costMgr.GetBudgetStatus()
 		if status.Exceeded {
+			c.logger.Warnw("ExecuteTask: budget exceeded",
+				"taskId", task.ID, "agentName", task.AgentName,
+				"dailySpent", status.DailySpent, "dailyLimit", status.DailyLimit,
+				"monthlySpent", status.MonthlySpent, "monthlyLimit", status.MonthlyLimit)
 			now := time.Now()
 			task.Status = v1.TaskStatusFailed
 			task.Error = fmt.Sprintf("budget exceeded: daily %.2f/%.2f, monthly %.2f/%.2f",
@@ -270,6 +291,8 @@ func (c *Controller) ExecuteTask(ctx context.Context, task v1.TaskRecord) (adapt
 	result, err := adp.Execute(ctx, task)
 	endTime := time.Now()
 	if err != nil {
+		c.logger.Errorw("ExecuteTask: execution failed",
+			"taskId", task.ID, "agentName", task.AgentName, "error", err, "duration", endTime.Sub(execStart))
 		task.Status = v1.TaskStatusFailed
 		task.Error = err.Error()
 		task.EndedAt = &endTime
@@ -343,6 +366,11 @@ func (c *Controller) ExecuteTask(ctx context.Context, task v1.TaskRecord) (adapt
 	if storeErr := c.store.UpdateTask(ctx, task); storeErr != nil {
 		c.logger.Errorw("failed to update task status", "task", task.ID, "error", storeErr)
 	}
+
+	c.logger.Infow("ExecuteTask completed",
+		"taskId", task.ID, "agentName", task.AgentName,
+		"tokensIn", result.TokensIn, "tokensOut", result.TokensOut,
+		"cost", task.Cost, "duration", endTime.Sub(execStart))
 
 	return result, nil
 }

@@ -56,12 +56,17 @@ func NewAIDecomposer(ctrl AgentController, logger *zap.SugaredLogger) *AIDecompo
 
 // Decompose uses an AI agent to break down the goal into a structured plan.
 func (d *AIDecomposer) Decompose(ctx context.Context, req DecomposeRequest) (*DecomposeResult, error) {
+	start := time.Now()
+	d.logger.Infow("Decompose", "goalId", req.GoalID, "goalName", req.GoalName)
+
 	// Ensure the system decomposer agent exists.
 	if err := d.ensureDecomposerAgent(ctx); err != nil {
+		d.logger.Errorw("Decompose: failed to ensure decomposer agent", "goalId", req.GoalID, "error", err)
 		return nil, fmt.Errorf("ensure decomposer agent: %w", err)
 	}
 
 	prompt := BuildDecompositionPrompt(req.GoalName, req.Description, d.constraints)
+	d.logger.Debugw("Decompose: prompt built", "goalId", req.GoalID, "promptLen", len(prompt))
 
 	var lastErr error
 	for attempt := 0; attempt <= maxRetries; attempt++ {
@@ -91,14 +96,17 @@ func (d *AIDecomposer) Decompose(ctx context.Context, req DecomposeRequest) (*De
 		// Convert AIDecomposeResult to DecomposeResult.
 		result := d.convertResult(req.GoalID, aiResult)
 
-		d.logger.Infow("AI decomposition complete",
+		d.logger.Infow("Decompose completed",
 			"goalId", req.GoalID,
 			"projects", len(result.Projects),
+			"duration", time.Since(start),
 		)
 
 		return result, nil
 	}
 
+	d.logger.Errorw("Decompose: all retries exhausted",
+		"goalId", req.GoalID, "totalAttempts", maxRetries+1, "error", lastErr, "duration", time.Since(start))
 	return nil, fmt.Errorf("AI decomposition failed after %d attempts: %w", maxRetries+1, lastErr)
 }
 
@@ -151,7 +159,9 @@ func (d *AIDecomposer) ensureDecomposerAgent(ctx context.Context) error {
 
 // callAI sends the decomposition prompt to the AI agent and parses the response.
 func (d *AIDecomposer) callAI(ctx context.Context, goalID, prompt string) (*AIDecomposeResult, error) {
+	start := time.Now()
 	taskID := fmt.Sprintf("decompose-%s-%d", goalID, time.Now().UnixMilli())
+	d.logger.Infow("callAI", "goalId", goalID, "taskId", taskID, "promptLen", len(prompt))
 
 	task := v1.TaskRecord{
 		ID:        taskID,
@@ -164,24 +174,29 @@ func (d *AIDecomposer) callAI(ctx context.Context, goalID, prompt string) (*AIDe
 
 	result, err := d.controller.ExecuteTask(ctx, task)
 	if err != nil {
+		d.logger.Errorw("callAI: execution failed", "goalId", goalID, "taskId", taskID, "error", err, "duration", time.Since(start))
 		return nil, fmt.Errorf("execute decomposition task: %w", err)
 	}
 
 	output := result.Output
+	d.logger.Debugw("callAI: AI response received", "goalId", goalID, "responseLen", len(output), "duration", time.Since(start))
 
 	// Try to extract JSON from the response (in case it's wrapped in markdown).
 	output = extractJSON(output)
 
 	var aiResult AIDecomposeResult
 	if err := json.Unmarshal([]byte(output), &aiResult); err != nil {
+		d.logger.Warnw("callAI: failed to parse AI response", "goalId", goalID, "error", err, "rawLen", len(output))
 		return nil, fmt.Errorf("parse AI response as JSON: %w (raw: %.200s)", err, output)
 	}
 
+	d.logger.Infow("callAI completed", "goalId", goalID, "taskId", taskID, "projects", len(aiResult.Projects), "duration", time.Since(start))
 	return &aiResult, nil
 }
 
 // validateResult checks the structural integrity of the AI decomposition output.
 func (d *AIDecomposer) validateResult(result *AIDecomposeResult) error {
+	d.logger.Debugw("validateResult", "projects", len(result.Projects))
 	if len(result.Projects) == 0 {
 		return fmt.Errorf("no projects in decomposition result")
 	}

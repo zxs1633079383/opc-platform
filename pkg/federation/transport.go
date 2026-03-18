@@ -57,7 +57,9 @@ func (t *HTTPTransport) SetAPIKey(key string) {
 
 // Send sends an HTTP request to the given endpoint.
 func (t *HTTPTransport) Send(endpoint, method, path string, body any) ([]byte, error) {
+	start := time.Now()
 	url := fmt.Sprintf("%s%s", endpoint, path)
+	t.logger.Debugw("Send", "url", url, "method", method)
 
 	var bodyBytes []byte
 	var reqBody io.Reader
@@ -86,6 +88,7 @@ func (t *HTTPTransport) Send(endpoint, method, path string, body any) ([]byte, e
 
 	resp, err := t.client.Do(req)
 	if err != nil {
+		t.logger.Errorw("Send: request failed", "url", url, "method", method, "error", err, "duration", time.Since(start))
 		return nil, fmt.Errorf("send request to %s: %w", url, err)
 	}
 	defer resp.Body.Close()
@@ -96,26 +99,32 @@ func (t *HTTPTransport) Send(endpoint, method, path string, body any) ([]byte, e
 	}
 
 	if resp.StatusCode >= 400 {
+		t.logger.Warnw("Send: non-success status", "url", url, "method", method, "statusCode", resp.StatusCode, "duration", time.Since(start))
 		return nil, fmt.Errorf("request to %s returned %d: %s", url, resp.StatusCode, string(respBody))
 	}
 
+	t.logger.Infow("Send completed", "url", url, "method", method, "statusCode", resp.StatusCode, "respSize", len(respBody), "duration", time.Since(start))
 	return respBody, nil
 }
 
 // Ping checks if a company endpoint is reachable.
 func (t *HTTPTransport) Ping(endpoint string) error {
+	start := time.Now()
 	url := fmt.Sprintf("%s/healthz", endpoint)
 
 	resp, err := t.client.Get(url)
 	if err != nil {
+		t.logger.Warnw("Ping failed", "endpoint", endpoint, "error", err, "duration", time.Since(start))
 		return fmt.Errorf("ping %s: %w", endpoint, err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		t.logger.Warnw("Ping: non-OK status", "endpoint", endpoint, "statusCode", resp.StatusCode, "duration", time.Since(start))
 		return fmt.Errorf("ping %s returned %d", endpoint, resp.StatusCode)
 	}
 
+	t.logger.Infow("Ping OK", "endpoint", endpoint, "duration", time.Since(start))
 	return nil
 }
 

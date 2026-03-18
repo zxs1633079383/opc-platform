@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"go.uber.org/zap"
 	v1 "github.com/zlc-ai/opc-platform/api/v1"
 	"github.com/zlc-ai/opc-platform/pkg/adapter"
 )
@@ -75,12 +76,15 @@ type Adapter struct {
 	devicePub   ed25519.PublicKey
 	devicePriv  ed25519.PrivateKey
 	deviceID    string
+	logger      *zap.SugaredLogger
 }
 
 // New creates a new OpenClaw adapter.
 func New() adapter.Adapter {
+	l, _ := zap.NewProduction()
 	return &Adapter{
-		phase: v1.AgentPhaseCreated,
+		phase:  v1.AgentPhaseCreated,
+		logger: l.Sugar().Named("openclaw"),
 	}
 }
 
@@ -178,17 +182,21 @@ func resolveGatewayURL(spec v1.AgentSpec) string {
 // --- Lifecycle ---
 
 func (a *Adapter) Start(ctx context.Context, spec v1.AgentSpec) error {
+	start := time.Now()
+	agentName := spec.Metadata.Name
+	a.logger.Infow("Start", "agentName", agentName)
 	a.mu.Lock()
 	a.spec = spec
 	a.phase = v1.AgentPhaseStarting
 	a.mu.Unlock()
 
 	// Load or create device identity.
-	pub, priv, err := loadOrCreateIdentity(spec.Metadata.Name)
+	pub, priv, err := loadOrCreateIdentity(agentName)
 	if err != nil {
 		a.mu.Lock()
 		a.phase = v1.AgentPhaseFailed
 		a.mu.Unlock()
+		a.logger.Errorw("Start: failed to load identity", "agentName", agentName, "error", err)
 		return fmt.Errorf("load identity: %w", err)
 	}
 
@@ -213,8 +221,10 @@ func (a *Adapter) Start(ctx context.Context, spec v1.AgentSpec) error {
 		a.mu.Lock()
 		a.phase = v1.AgentPhaseFailed
 		a.mu.Unlock()
+		a.logger.Errorw("Start: ws dial failed", "agentName", agentName, "gatewayURL", gatewayURL, "error", err)
 		return fmt.Errorf("ws dial %s: %w", gatewayURL, err)
 	}
+	a.logger.Infow("Start: ws connected", "agentName", agentName, "gatewayURL", gatewayURL)
 
 	a.mu.Lock()
 	a.conn = conn
@@ -251,6 +261,7 @@ func (a *Adapter) Start(ctx context.Context, spec v1.AgentSpec) error {
 	resp, err := a.sendConnect(ctx, spec, challengePayload.Nonce, token)
 	if err != nil {
 		a.cleanup()
+		a.logger.Errorw("Start: handshake failed", "agentName", agentName, "error", err)
 		return fmt.Errorf("connect handshake: %w", err)
 	}
 
@@ -271,15 +282,18 @@ func (a *Adapter) Start(ctx context.Context, spec v1.AgentSpec) error {
 	a.startAt = time.Now()
 	a.mu.Unlock()
 
+	a.logger.Infow("Start completed", "agentName", agentName, "connID", a.connID, "duration", time.Since(start))
 	return nil
 }
 
 func (a *Adapter) Stop(_ context.Context) error {
+	a.logger.Infow("Stop", "agentName", a.spec.Metadata.Name)
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
 	a.phase = v1.AgentPhaseStopped
 	a.cleanupLocked()
+	a.logger.Infow("Stop completed", "agentName", a.spec.Metadata.Name)
 	return nil
 }
 
@@ -369,6 +383,7 @@ func (a *Adapter) readLoop() {
 				return
 			default:
 			}
+			a.logger.Warnw("readLoop: connection lost", "agentName", a.spec.Metadata.Name, "error", err)
 			return
 		}
 
@@ -531,9 +546,12 @@ func (a *Adapter) sendConnect(ctx context.Context, spec v1.AgentSpec, nonce, tok
 // --- Execute ---
 
 func (a *Adapter) Execute(ctx context.Context, task v1.TaskRecord) (adapter.ExecuteResult, error) {
+	execStart := time.Now()
+	a.logger.Infow("Execute", "taskId", task.ID, "agentName", a.spec.Metadata.Name)
 	a.mu.RLock()
 	if a.phase != v1.AgentPhaseRunning {
 		a.mu.RUnlock()
+		a.logger.Warnw("Execute: agent not running", "taskId", task.ID, "phase", a.phase)
 		return adapter.ExecuteResult{}, fmt.Errorf("agent not running (phase: %s)", a.phase)
 	}
 	a.mu.RUnlock()
@@ -553,6 +571,7 @@ func (a *Adapter) Execute(ctx context.Context, task v1.TaskRecord) (adapter.Exec
 		a.mu.Lock()
 		a.metrics.TasksFailed++
 		a.mu.Unlock()
+		a.logger.Errorw("Execute: agent request failed", "taskId", task.ID, "error", err, "duration", time.Since(execStart))
 		return adapter.ExecuteResult{}, fmt.Errorf("openclaw agent request: %w", err)
 	}
 
@@ -585,6 +604,9 @@ func (a *Adapter) Execute(ctx context.Context, task v1.TaskRecord) (adapter.Exec
 	a.metrics.TotalTokensOut += result.TokensOut
 	a.mu.Unlock()
 
+	a.logger.Infow("Execute completed", "taskId", task.ID,
+		"tokensIn", result.TokensIn, "tokensOut", result.TokensOut,
+		"cost", result.Cost, "duration", time.Since(execStart))
 	return result, nil
 }
 
