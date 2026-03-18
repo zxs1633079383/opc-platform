@@ -1448,6 +1448,20 @@ func (s *Server) advanceFederatedGoal(cb FederationCallback) {
 			"goalId", cb.GoalID,
 			"status", run.Status,
 		)
+
+		// Update goal in database.
+		bgCtx := context.Background()
+		if g, err := s.controller.Store().GetGoal(bgCtx, cb.GoalID); err == nil {
+			if allSucceeded {
+				g.Status = "completed"
+				g.Phase = v1.GoalPhaseCompleted
+			} else {
+				g.Status = "failed"
+				g.Phase = v1.GoalPhaseFailed
+			}
+			g.UpdatedAt = time.Now()
+			s.controller.Store().UpdateGoal(bgCtx, g)
+		}
 	}
 }
 
@@ -1587,6 +1601,20 @@ func (s *Server) createFederatedGoal(c *gin.Context) {
 	agentForProject := make(map[string]string, len(req.Projects))
 	for _, rp := range req.Projects {
 		agentForProject[rp.Name] = rp.Agent
+	}
+
+	// Persist goal to database so it appears in /api/goals.
+	goalRecord := v1.GoalRecord{
+		ID:          goalID,
+		Name:        req.Name,
+		Description: req.Description,
+		Status:      "in_progress",
+		Phase:       v1.GoalPhaseInProgress,
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
+	}
+	if err := s.controller.Store().CreateGoal(ctx, goalRecord); err != nil {
+		s.logger.Warnw("createFederatedGoal: failed to persist goal", "goalId", goalID, "error", err)
 	}
 
 	// Create the run tracker.
