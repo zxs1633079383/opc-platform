@@ -132,14 +132,18 @@ done
 
 # ─── 启动 Master Dashboard ────────────────────────────────────────────────────
 DASHBOARD_DIR="${PROJECT_ROOT}/dashboard"
-if [ -d "$DASHBOARD_DIR" ] && [ -d "${DASHBOARD_DIR}/.next" ]; then
-    log "启动 Master Dashboard..."
-    (cd "$DASHBOARD_DIR" && npx next start -p 3000 \
-        > "${BASE_DIR}/master/dashboard.log" 2>&1) &
+STANDALONE_SERVER="${DASHBOARD_DIR}/.next/standalone/server.js"
+if [ -f "$STANDALONE_SERVER" ]; then
+    log "启动 Master Dashboard (standalone)..."
+    # Copy static assets to standalone (required by standalone mode)
+    cp -r "${DASHBOARD_DIR}/.next/static" "${DASHBOARD_DIR}/.next/standalone/.next/static" 2>/dev/null || true
+    cp -r "${DASHBOARD_DIR}/public" "${DASHBOARD_DIR}/.next/standalone/public" 2>/dev/null || true
+    PORT=3000 HOSTNAME=0.0.0.0 node "$STANDALONE_SERVER" \
+        > "${BASE_DIR}/master/dashboard.log" 2>&1 &
     log "  Dashboard → :3000（Federation 页面可查看所有节点）"
     sleep 2
 else
-    warn "Dashboard 未构建，跳过（cd dashboard && npm run build）"
+    warn "Dashboard standalone 未构建，跳过（cd dashboard && npm run build）"
 fi
 
 # ─── 注册联邦 ─────────────────────────────────────────────────────────────────
