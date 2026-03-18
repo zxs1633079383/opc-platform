@@ -684,9 +684,13 @@ func (s *Server) runTask(c *gin.Context) {
 	}
 
 	// Execute asynchronously so the caller can poll for status.
+	// Detach from HTTP request context (which gets canceled after response)
+	// but preserve the trace span parent so child spans stay in the same trace.
+	traceCtx := trace.ContextWithSpan(context.Background(), span)
+
 	go func() {
-		// Create execution child span from the parent context.
-		execCtx, execSpan := opctrace.StartSpan(ctx, "executeAgent",
+		// Create execution child span from the detached trace context.
+		execCtx, execSpan := opctrace.StartSpan(traceCtx, "executeAgent",
 			trace.WithAttributes(
 				attribute.String("task.id", taskID),
 				attribute.String("agent", req.Agent),
