@@ -34,6 +34,10 @@ func (m *mockTransport) Send(endpoint, method, path string, body any) ([]byte, e
 	return []byte(`{}`), nil
 }
 
+func (m *mockTransport) SendWithContext(_ context.Context, endpoint, method, path string, body any) ([]byte, error) {
+	return m.Send(endpoint, method, path, body)
+}
+
 func (m *mockTransport) Ping(endpoint string) error {
 	if m.pingFunc != nil {
 		return m.pingFunc(endpoint)

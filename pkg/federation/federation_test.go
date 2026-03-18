@@ -1,6 +1,7 @@
 package federation
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -42,6 +43,10 @@ func (m *mockTransport) Send(endpoint, method, path string, body any) ([]byte, e
 		return m.sendFunc(endpoint, method, path, body)
 	}
 	return []byte(`{}`), nil
+}
+
+func (m *mockTransport) SendWithContext(_ context.Context, endpoint, method, path string, body any) ([]byte, error) {
+	return m.Send(endpoint, method, path, body)
 }
 
 func (m *mockTransport) Ping(endpoint string) error {

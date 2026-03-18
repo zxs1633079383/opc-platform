@@ -24,15 +24,41 @@ type Goal struct {
 	CreatedAt       time.Time  `json:"createdAt"`
 }
 
+// ProjectStatus represents the lifecycle status of a project within a federated goal.
+type ProjectStatus string
+
+const (
+	ProjectPending   ProjectStatus = "Pending"
+	ProjectRunning   ProjectStatus = "Running"
+	ProjectCompleted ProjectStatus = "Completed"
+	ProjectFailed    ProjectStatus = "Failed"
+)
+
 // Project represents a deliverable within a goal, scoped to a single company.
 type Project struct {
-	ID           string   `json:"id"`
-	GoalID       string   `json:"goalId"`
-	CompanyID    string   `json:"companyId"`
-	Name         string   `json:"name"`
-	Description  string   `json:"description,omitempty"`
-	Tasks        []*Task  `json:"tasks,omitempty"`
-	Dependencies []string `json:"dependencies,omitempty"`
+	ID           string        `json:"id"`
+	GoalID       string        `json:"goalId"`
+	CompanyID    string        `json:"companyId"`
+	Name         string        `json:"name"`
+	Description  string        `json:"description,omitempty"`
+	Tasks        []*Task       `json:"tasks,omitempty"`
+	Dependencies []string      `json:"dependencies,omitempty"`
+	Status       ProjectStatus `json:"status,omitempty"`
+	Result       string        `json:"result,omitempty"`
+}
+
+// FederatedGoalRun tracks the execution state of a federated goal with project dependencies.
+type FederatedGoalRun struct {
+	GoalID      string               `json:"goalId"`
+	GoalName    string               `json:"goalName"`
+	Description string               `json:"description"`
+	CallbackURL string               `json:"callbackURL"`
+	Status      GoalStatus           `json:"status"`
+	Projects    map[string]*Project  `json:"projects"`    // keyed by project name
+	Layers      [][]*Project         `json:"-"`           // DAG layers for dispatch order
+	Results      map[string]string    `json:"results"`              // project name -> result output
+	TraceContext string               `json:"traceContext,omitempty"` // serialized W3C traceparent for span continuity
+	CreatedAt    time.Time            `json:"createdAt"`
 }
 
 // Task represents a unit of work within a project.

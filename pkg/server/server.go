@@ -22,7 +22,10 @@ import (
 	"github.com/zlc-ai/opc-platform/pkg/goal"
 	opctrace "github.com/zlc-ai/opc-platform/pkg/trace"
 	"github.com/zlc-ai/opc-platform/pkg/workflow"
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 	"gopkg.in/yaml.v3"
@@ -637,7 +640,11 @@ func (s *Server) runTask(c *gin.Context) {
 		return
 	}
 
+	// Extract trace context from incoming request (propagated from master).
 	ctx := c.Request.Context()
+	propagator := otel.GetTextMapPropagator()
+	ctx = propagator.Extract(ctx, propagation.HeaderCarrier(c.Request.Header))
+
 	taskID := fmt.Sprintf("task-%d", time.Now().UnixNano()/1e6)
 	s.logger.Infow("runTask", "taskId", taskID, "agentName", req.Agent,
 		"goalId", req.GoalID, "projectId", req.ProjectID, "hasCallback", req.CallbackURL != "")
@@ -656,31 +663,54 @@ func (s *Server) runTask(c *gin.Context) {
 			attribute.String("agent", req.Agent),
 			attribute.String("goal.id", req.GoalID),
 			attribute.String("project.id", req.ProjectID),
+			attribute.String("message.preview", truncate(req.Message, 300)),
+			attribute.Bool("has.callback", req.CallbackURL != ""),
+			attribute.String("lineage", req.LineageJSON),
 		))
-	defer span.End()
+	// Don't defer span.End() — end it after async execution completes.
 
 	// Auto-create and start agent if not exists (federation dispatch needs this).
 	s.ensureAgent(ctx, req.Agent)
 
 	if err := s.controller.Store().CreateTask(ctx, task); err != nil {
 		s.logger.Errorw("runTask: failed to create task", "taskId", taskID, "error", err)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		span.End()
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
 	// Execute asynchronously so the caller can poll for status.
 	go func() {
+		// Create execution child span from the parent context.
+		execCtx, execSpan := opctrace.StartSpan(ctx, "executeAgent",
+			trace.WithAttributes(
+				attribute.String("task.id", taskID),
+				attribute.String("agent", req.Agent),
+			))
+
 		execStart := time.Now()
-		bgCtx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+		bgCtx, cancel := context.WithTimeout(execCtx, 30*time.Minute)
 		defer cancel()
 
 		result, execErr := s.controller.ExecuteTask(bgCtx, task)
 		if execErr != nil {
+			execSpan.RecordError(execErr)
+			execSpan.SetStatus(codes.Error, execErr.Error())
+			execSpan.SetAttributes(attribute.String("error.message", execErr.Error()))
 			s.logger.Errorw("runTask: execution failed", "taskId", taskID, "agentName", req.Agent, "error", execErr, "duration", time.Since(execStart))
 		} else {
+			execSpan.SetAttributes(
+				attribute.Int("tokens.in", result.TokensIn),
+				attribute.Int("tokens.out", result.TokensOut),
+				attribute.Float64("cost", result.Cost),
+				attribute.String("result.preview", truncate(result.Output, 500)),
+			)
 			s.logger.Infow("runTask: execution completed", "taskId", taskID, "agentName", req.Agent,
 				"tokensIn", result.TokensIn, "tokensOut", result.TokensOut, "duration", time.Since(execStart))
 		}
+		execSpan.End()
 
 		// If a callbackURL was provided, notify the originating OPC.
 		if req.CallbackURL != "" {
@@ -701,6 +731,8 @@ func (s *Server) runTask(c *gin.Context) {
 			}
 			s.sendCallback(req.CallbackURL, cb)
 		}
+
+		span.End() // End the runTask span after execution and callback.
 	}()
 
 	c.JSON(http.StatusAccepted, gin.H{
@@ -1296,7 +1328,14 @@ func (s *Server) federationCallback(c *gin.Context) {
 			attribute.String("project.id", cb.ProjectID),
 			attribute.String("task.id", cb.TaskID),
 			attribute.String("status", cb.Status),
+			attribute.Int("tokens.in", cb.TokensIn),
+			attribute.Int("tokens.out", cb.TokensOut),
+			attribute.Float64("cost", cb.Cost),
+			attribute.String("result.preview", truncate(cb.Result, 300)),
 		))
+	if cb.Status == "failed" {
+		cbSpan.SetStatus(codes.Error, cb.Result)
+	}
 	defer cbSpan.End()
 
 	s.logger.Infow("federation callback received",
@@ -1419,9 +1458,18 @@ func (s *Server) advanceFederatedGoal(cb FederationCallback) {
 			"goalId", cb.GoalID,
 			"projects", len(readyToDispatch),
 		)
+
+		// Restore trace context from the original goal span.
+		dispatchCtx := context.Background()
+		if run.TraceContext != "" {
+			carrier := propagation.MapCarrier{}
+			carrier.Set("traceparent", run.TraceContext)
+			dispatchCtx = otel.GetTextMapPropagator().Extract(dispatchCtx, carrier)
+		}
+
 		// Build agentForProject map (empty — will use company defaults).
 		agentMap := make(map[string]string)
-		s.dispatchProjectLayer(run, readyToDispatch, agentMap)
+		s.dispatchProjectLayer(dispatchCtx, run, readyToDispatch, agentMap)
 	}
 
 	// Check if all projects are terminal (completed or failed).
@@ -1581,14 +1629,19 @@ func (s *Server) createFederatedGoal(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	ctx, span := opctrace.StartSpan(ctx, "createFederatedGoal",
+	ctx, goalSpan := opctrace.StartSpan(ctx, "createFederatedGoal",
 		trace.WithAttributes(
 			attribute.String("goal.id", goalID),
 			attribute.String("goal.name", req.Name),
-			attribute.Int("projects.count", len(req.Projects)),
+			attribute.Int("goal.projects", len(req.Projects)),
+			attribute.Int("goal.layers", len(layers)),
+			attribute.String("goal.description", truncate(req.Description, 500)),
 		))
-	defer span.End()
-	_ = ctx // ctx available for future child spans
+
+	// Serialize trace context for later use in callbacks and dispatch.
+	carrier := propagation.MapCarrier{}
+	otel.GetTextMapPropagator().Inject(ctx, carrier)
+	traceContext := carrier.Get("traceparent")
 
 	s.logger.Infow("createFederatedGoal",
 		"goalId", goalID,
@@ -1619,15 +1672,16 @@ func (s *Server) createFederatedGoal(c *gin.Context) {
 
 	// Create the run tracker.
 	run := &goal.FederatedGoalRun{
-		GoalID:      goalID,
-		GoalName:    req.Name,
-		Description: req.Description,
-		CallbackURL: callbackURL,
-		Status:      goal.GoalInProgress,
-		Projects:    projectMap,
-		Layers:      layers,
-		Results:     make(map[string]string),
-		CreatedAt:   time.Now(),
+		GoalID:       goalID,
+		GoalName:     req.Name,
+		Description:  req.Description,
+		CallbackURL:  callbackURL,
+		Status:       goal.GoalInProgress,
+		Projects:     projectMap,
+		Layers:       layers,
+		Results:      make(map[string]string),
+		TraceContext: traceContext,
+		CreatedAt:    time.Now(),
 	}
 
 	s.federatedGoalRunsMu.Lock()
@@ -1635,7 +1689,8 @@ func (s *Server) createFederatedGoal(c *gin.Context) {
 	s.federatedGoalRunsMu.Unlock()
 
 	// Dispatch the first layer (projects with no dependencies).
-	dispatchResults := s.dispatchProjectLayer(run, layers[0], agentForProject)
+	dispatchResults := s.dispatchProjectLayer(ctx, run, layers[0], agentForProject)
+	goalSpan.End()
 
 	c.JSON(http.StatusAccepted, gin.H{
 		"goalId":      goalID,
@@ -1649,6 +1704,7 @@ func (s *Server) createFederatedGoal(c *gin.Context) {
 
 // dispatchProjectLayer sends projects in a single DAG layer to their target companies.
 func (s *Server) dispatchProjectLayer(
+	ctx context.Context,
 	run *goal.FederatedGoalRun,
 	layer []*goal.Project,
 	agentForProject map[string]string,
@@ -1720,9 +1776,25 @@ func (s *Server) dispatchProjectLayer(
 			"lineage":     lineageStr,
 		}
 
+		// Create a child span for this project dispatch.
+		_, projSpan := opctrace.StartSpan(ctx, "dispatchProject",
+			trace.WithAttributes(
+				attribute.String("goal.id", run.GoalID),
+				attribute.String("project.name", proj.Name),
+				attribute.String("project.id", proj.ID),
+				attribute.String("company.id", proj.CompanyID),
+				attribute.String("company.name", company.Name),
+				attribute.String("agent", agent),
+				attribute.Int("dependencies.count", len(proj.Dependencies)),
+				attribute.String("message.preview", truncate(message, 200)),
+			))
+
+		// Use SendWithContext to propagate trace context to remote OPC.
 		transport := s.federation.Transport()
-		_, sendErr := transport.Send(company.Endpoint, "POST", "/api/run", payload)
+		_, sendErr := transport.SendWithContext(ctx, company.Endpoint, "POST", "/api/run", payload)
 		if sendErr != nil {
+			projSpan.RecordError(sendErr)
+			projSpan.SetStatus(codes.Error, sendErr.Error())
 			proj.Status = goal.ProjectFailed
 			results = append(results, gin.H{
 				"project": proj.Name, "companyId": proj.CompanyID,
@@ -1735,6 +1807,7 @@ func (s *Server) dispatchProjectLayer(
 				"status": "dispatched",
 			})
 		}
+		projSpan.End()
 
 		s.logger.Infow("dispatched project",
 			"goalId", run.GoalID,
@@ -2215,4 +2288,12 @@ func (s *Server) ensureAgent(ctx context.Context, name string) {
 	} else {
 		s.logger.Infow("ensureAgent completed", "agentName", name, "duration", time.Since(start))
 	}
+}
+
+// truncate returns s truncated to maxLen characters, appending "..." if truncated.
+func truncate(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
 }

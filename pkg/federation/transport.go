@@ -2,6 +2,7 @@ package federation
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -9,6 +10,8 @@ import (
 	"strconv"
 	"time"
 
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
 	"go.uber.org/zap"
 )
 
@@ -16,6 +19,9 @@ import (
 type Transport interface {
 	// Send sends a request to a company endpoint and returns the response.
 	Send(endpoint string, method string, path string, body any) ([]byte, error)
+
+	// SendWithContext sends a request with trace context propagation.
+	SendWithContext(ctx context.Context, endpoint string, method string, path string, body any) ([]byte, error)
 
 	// Ping checks if a company endpoint is reachable.
 	Ping(endpoint string) error
@@ -56,7 +62,13 @@ func (t *HTTPTransport) SetAPIKey(key string) {
 }
 
 // Send sends an HTTP request to the given endpoint.
+// It delegates to SendWithContext with a background context.
 func (t *HTTPTransport) Send(endpoint, method, path string, body any) ([]byte, error) {
+	return t.SendWithContext(context.Background(), endpoint, method, path, body)
+}
+
+// SendWithContext sends an HTTP request with trace context propagation.
+func (t *HTTPTransport) SendWithContext(ctx context.Context, endpoint, method, path string, body any) ([]byte, error) {
 	start := time.Now()
 	url := fmt.Sprintf("%s%s", endpoint, path)
 	t.logger.Debugw("Send", "url", url, "method", method)
@@ -72,11 +84,14 @@ func (t *HTTPTransport) Send(endpoint, method, path string, body any) ([]byte, e
 		reqBody = bytes.NewReader(data)
 	}
 
-	req, err := http.NewRequest(method, url, reqBody)
+	req, err := http.NewRequestWithContext(ctx, method, url, reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+
+	// Inject trace context into outgoing request headers.
+	otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(req.Header))
 
 	// Sign request if apiKey is available.
 	if t.apiKey != "" {
