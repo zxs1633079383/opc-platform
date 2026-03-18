@@ -659,6 +659,9 @@ func (s *Server) runTask(c *gin.Context) {
 		))
 	defer span.End()
 
+	// Auto-create and start agent if not exists (federation dispatch needs this).
+	s.ensureAgent(ctx, req.Agent)
+
 	if err := s.controller.Store().CreateTask(ctx, task); err != nil {
 		s.logger.Errorw("runTask: failed to create task", "taskId", taskID, "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
