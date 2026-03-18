@@ -139,7 +139,7 @@ func runRunWorkflow(cmd *cobra.Command, args []string) error {
 
 	logger := config.Logger
 	if logger == nil {
-		config.InitLogger(false)
+		config.InitLogger(false, "")
 		logger = config.Logger
 	}
 

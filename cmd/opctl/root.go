@@ -10,9 +10,10 @@ import (
 )
 
 var (
-	cfgFile string
-	verbose bool
-	output  string
+	cfgFile  string
+	verbose  bool
+	output   string
+	logLevel string
 )
 
 var rootCmd = &cobra.Command{
@@ -21,7 +22,11 @@ var rootCmd = &cobra.Command{
 	Long: `opctl is the command-line interface for OPC Platform.
 Manage AI Agent clusters like Kubernetes manages containers.`,
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
-		config.InitLogger(verbose)
+		level := logLevel
+		if level == "" {
+			level = viper.GetString("logLevel")
+		}
+		config.InitLogger(verbose, level)
 	},
 }
 
@@ -31,6 +36,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is ~/.opc/config.yaml)")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "enable verbose/debug output")
 	rootCmd.PersistentFlags().StringVarP(&output, "output", "o", "table", "output format: json|yaml|table")
+	rootCmd.PersistentFlags().StringVar(&logLevel, "log-level", "", "log level: debug|info|warn|error (default from config or 'info')")
 }
 
 func initConfig() {

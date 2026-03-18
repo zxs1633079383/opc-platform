@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -61,16 +62,35 @@ func EnsureConfigDir() error {
 	return os.MkdirAll(stateDir, 0o755)
 }
 
+// ParseLogLevel converts a string log level to a zapcore.Level.
+// Supported values: debug, info, warn, warning, error (case-insensitive).
+// Returns InfoLevel for empty or unrecognized values.
+func ParseLogLevel(level string) zapcore.Level {
+	switch strings.ToLower(strings.TrimSpace(level)) {
+	case "debug":
+		return zapcore.DebugLevel
+	case "info":
+		return zapcore.InfoLevel
+	case "warn", "warning":
+		return zapcore.WarnLevel
+	case "error":
+		return zapcore.ErrorLevel
+	default:
+		return zapcore.InfoLevel
+	}
+}
+
 // InitLogger initializes the global zap logger.
-// When verbose is true, the log level is set to Debug; otherwise Info.
-func InitLogger(verbose bool) {
-	level := zapcore.InfoLevel
+// The level string is parsed via ParseLogLevel. If verbose is true, the level
+// is overridden to Debug regardless of the level parameter.
+func InitLogger(verbose bool, level string) {
+	zapLevel := ParseLogLevel(level)
 	if verbose {
-		level = zapcore.DebugLevel
+		zapLevel = zapcore.DebugLevel
 	}
 
 	cfg := zap.Config{
-		Level:            zap.NewAtomicLevelAt(level),
+		Level:            zap.NewAtomicLevelAt(zapLevel),
 		Development:      verbose,
 		Encoding:         "console",
 		EncoderConfig:    zap.NewDevelopmentEncoderConfig(),

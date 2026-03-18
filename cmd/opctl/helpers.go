@@ -48,7 +48,7 @@ func getController() (*controller.Controller, func(), error) {
 
 	logger := config.Logger
 	if logger == nil {
-		config.InitLogger(false)
+		config.InitLogger(false, "")
 		logger = config.Logger
 	}
 

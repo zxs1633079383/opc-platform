@@ -162,7 +162,7 @@ func runFederationStatus(cmd *cobra.Command, args []string) error {
 func ensureLogger() *zap.SugaredLogger {
 	logger := config.Logger
 	if logger == nil {
-		config.InitLogger(false)
+		config.InitLogger(false, "")
 		logger = config.Logger
 	}
 	return logger

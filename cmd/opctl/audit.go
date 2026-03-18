@@ -49,7 +49,7 @@ func init() {
 }
 
 func getAuditLogger() (*audit.Logger, error) {
-	config.InitLogger(false)
+	config.InitLogger(false, "")
 	dir := filepath.Join(config.GetConfigDir(), "audit")
 	return audit.NewLogger(dir, config.Logger), nil
 }

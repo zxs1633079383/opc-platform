@@ -49,7 +49,7 @@ func runClusterInit(cmd *cobra.Command, args []string) error {
 
 	logger := config.Logger
 	if logger == nil {
-		config.InitLogger(false)
+		config.InitLogger(false, "")
 		logger = config.Logger
 	}
 
@@ -91,7 +91,7 @@ func runClusterJoin(cmd *cobra.Command, args []string) error {
 
 	logger := config.Logger
 	if logger == nil {
-		config.InitLogger(false)
+		config.InitLogger(false, "")
 		logger = config.Logger
 	}
 
@@ -118,7 +118,7 @@ var clusterNodesCmd = &cobra.Command{
 func runClusterNodes(cmd *cobra.Command, args []string) error {
 	logger := config.Logger
 	if logger == nil {
-		config.InitLogger(false)
+		config.InitLogger(false, "")
 		logger = config.Logger
 	}
 
@@ -152,7 +152,7 @@ var clusterStatusCmd = &cobra.Command{
 func runClusterStatus(cmd *cobra.Command, args []string) error {
 	logger := config.Logger
 	if logger == nil {
-		config.InitLogger(false)
+		config.InitLogger(false, "")
 		logger = config.Logger
 	}
 
@@ -202,7 +202,7 @@ var clusterLeaveCmd = &cobra.Command{
 func runClusterLeave(cmd *cobra.Command, args []string) error {
 	logger := config.Logger
 	if logger == nil {
-		config.InitLogger(false)
+		config.InitLogger(false, "")
 		logger = config.Logger
 	}
 

@@ -43,7 +43,6 @@ func init() {
 }
 
 func runServe(cmd *cobra.Command, args []string) error {
-	config.InitLogger(verbose)
 	logger := config.Logger
 
 	// Create controller (persistent for daemon lifetime).

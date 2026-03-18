@@ -41,7 +41,7 @@ func parseDollar(s string) (float64, error) {
 }
 
 func runBudgetSet(cmd *cobra.Command, args []string) error {
-	config.InitLogger(false)
+	config.InitLogger(false, "")
 	dir := filepath.Join(config.GetConfigDir(), "cost")
 	tracker := cost.NewTracker(dir, config.Logger)
 

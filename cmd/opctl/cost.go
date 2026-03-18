@@ -55,7 +55,7 @@ func init() {
 }
 
 func getCostTracker() *cost.Tracker {
-	config.InitLogger(false)
+	config.InitLogger(false, "")
 	dir := filepath.Join(config.GetConfigDir(), "cost")
 	return cost.NewTracker(dir, config.Logger)
 }
