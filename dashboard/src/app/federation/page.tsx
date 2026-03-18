@@ -895,11 +895,16 @@ export default function FederationPage() {
     queryFn: fetchCompanies,
   })
 
+  const [registerError, setRegisterError] = useState<string | null>(null)
   const registerMutation = useMutation({
     mutationFn: registerCompany,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['companies'] })
       setIsRegisterModalOpen(false)
+      setRegisterError(null)
+    },
+    onError: (err: Error) => {
+      setRegisterError(err.message)
     },
   })
 

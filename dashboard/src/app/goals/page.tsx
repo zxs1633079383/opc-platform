@@ -350,7 +350,7 @@ export default function GoalsPage() {
       <CreateGoalModal
         isOpen={showCreateModal}
         onClose={() => setShowCreateModal(false)}
-        onSubmit={(data) => createMutation.mutate(data as Parameters<typeof createGoal>[0])}
+        onSubmit={(data) => createMutation.mutate(data)}
       />
     </div>
   )

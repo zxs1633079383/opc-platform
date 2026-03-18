@@ -54,7 +54,8 @@ export default function TasksPage() {
   const [statusFilter, setStatusFilter] = useState<string>(initialStatus)
   const [agentFilter, setAgentFilter] = useState<string>('all')
   const [expandedTask, setExpandedTask] = useState<string | null>(null)
-  const [viewMode, setViewMode] = useState<'flat' | 'hierarchy' | 'goals' | 'projects' | 'tasks' | 'issues'>('flat')
+  const [viewMode, setViewMode] = useState<'flat' | 'hierarchy' | 'categories'>('flat')
+  const [categoryTab, setCategoryTab] = useState<'goals' | 'projects' | 'tasks' | 'issues'>('goals')
   const [expandedGoals, setExpandedGoals] = useState<Set<string>>(new Set())
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set())
 
@@ -172,14 +173,12 @@ export default function TasksPage() {
             View and manage task executions
           </p>
         </div>
-        <div className="flex gap-1 bg-gray-100 dark:bg-gray-800 rounded-lg p-1 overflow-x-auto">
+        <div className="flex gap-1 bg-gray-100 dark:bg-gray-800 rounded-lg p-1">
           {([
-            { value: 'flat', label: 'All Tasks', icon: ListTodo },
-            { value: 'hierarchy', label: 'Hierarchy', icon: GitBranch },
-            { value: 'goals', label: 'Goals', icon: Target },
-            { value: 'projects', label: 'Projects', icon: FolderKanban },
-            { value: 'issues', label: 'Issues', icon: Bot },
-          ] as const).map((tab) => {
+            { value: 'flat' as const, label: 'All Tasks', icon: ListTodo },
+            { value: 'hierarchy' as const, label: 'Hierarchy', icon: GitBranch },
+            { value: 'categories' as const, label: 'Categories', icon: FolderKanban },
+          ]).map((tab) => {
             const Icon = tab.icon
             return (
               <button
@@ -492,8 +491,34 @@ export default function TasksPage() {
         </div>
       )}
 
-      {/* Goals View */}
-      {viewMode === 'goals' && (
+      {/* Categories View */}
+      {viewMode === 'categories' && (
+        <div className="space-y-4">
+          {/* Category sub-tabs */}
+          <div className="flex gap-1 bg-gray-100 dark:bg-gray-800 rounded-lg p-1 w-fit">
+            {([
+              { value: 'goals' as const, label: `Goals (${goals.length})`, icon: Target },
+              { value: 'projects' as const, label: `Projects (${projects.length})`, icon: FolderKanban },
+              { value: 'tasks' as const, label: `Tasks (${tasks.length})`, icon: ListTodo },
+              { value: 'issues' as const, label: `Issues (${issues.length})`, icon: Bot },
+            ]).map((tab) => {
+              const Icon = tab.icon
+              return (
+                <button
+                  key={tab.value}
+                  onClick={() => setCategoryTab(tab.value)}
+                  className={clsx('flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap',
+                    categoryTab === tab.value ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm' : 'text-gray-500'
+                  )}
+                >
+                  <Icon className="w-3 h-3" />{tab.label}
+                </button>
+              )
+            })}
+          </div>
+
+          {/* Category: Goals */}
+          {categoryTab === 'goals' && (
         <div className="bg-white dark:bg-gray-900 rounded-xl shadow-sm border border-gray-200 dark:border-gray-800 divide-y divide-gray-100 dark:divide-gray-800">
           {goals.length === 0 ? (
             <p className="p-8 text-center text-gray-400">No goals found</p>
@@ -534,7 +559,7 @@ export default function TasksPage() {
       )}
 
       {/* Projects View */}
-      {viewMode === 'projects' && (
+      {categoryTab === 'projects' && (
         <div className="bg-white dark:bg-gray-900 rounded-xl shadow-sm border border-gray-200 dark:border-gray-800 divide-y divide-gray-100 dark:divide-gray-800">
           {projects.length === 0 ? (
             <p className="p-8 text-center text-gray-400">No projects found</p>
@@ -566,7 +591,7 @@ export default function TasksPage() {
       )}
 
       {/* Issues View */}
-      {viewMode === 'issues' && (
+      {categoryTab === 'issues' && (
         <div className="bg-white dark:bg-gray-900 rounded-xl shadow-sm border border-gray-200 dark:border-gray-800 divide-y divide-gray-100 dark:divide-gray-800">
           {issues.length === 0 ? (
             <p className="p-8 text-center text-gray-400">No issues found</p>
@@ -604,12 +629,49 @@ export default function TasksPage() {
         </div>
       )}
 
+          {/* Category: Tasks (grouped by status: Todo / Running / Complete) */}
+          {categoryTab === 'tasks' && (
+            <div className="bg-white dark:bg-gray-900 rounded-xl shadow-sm border border-gray-200 dark:border-gray-800">
+              {(['todo', 'running', 'complete'] as const).map((group) => {
+                const groupTasks = tasks.filter((t) => {
+                  const g = getStatusGroup(t.status)
+                  return group === 'complete' ? (g === 'success' || g === 'fail') : g === group
+                })
+                const groupLabel = group === 'todo' ? 'Todo' : group === 'running' ? 'Running' : 'Complete'
+                const groupColor = group === 'todo' ? 'text-gray-500' : group === 'running' ? 'text-blue-500' : 'text-green-500'
+                return (
+                  <div key={group}>
+                    <div className={`px-4 py-2 bg-gray-50 dark:bg-gray-800/50 border-b border-gray-200 dark:border-gray-700 flex items-center gap-2 ${groupColor}`}>
+                      <span className="text-sm font-semibold">{groupLabel}</span>
+                      <span className="text-xs text-gray-400">({groupTasks.length})</span>
+                    </div>
+                    {groupTasks.length === 0 ? (
+                      <p className="px-4 py-3 text-sm text-gray-400 italic">No {groupLabel.toLowerCase()} tasks</p>
+                    ) : (
+                      <div className="divide-y divide-gray-100 dark:divide-gray-800">
+                        {groupTasks.map((t) => (
+                          <div key={t.id} className="px-4 py-2.5 flex items-center gap-3 text-sm hover:bg-gray-50 dark:hover:bg-gray-800/30">
+                            <span className={clsx('px-1.5 py-0.5 rounded text-xs font-medium', statusColors[t.status])}>{getStatusLabel(t.status)}</span>
+                            <span className="text-gray-700 dark:text-gray-300 truncate flex-1">{t.message.slice(0, 80)}</span>
+                            <span className="text-xs text-gray-400">{t.agentName}</span>
+                            {t.goalId && <span className="text-xs text-purple-400">Goal</span>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
+        </div>
+      )}
+
       {/* Summary */}
       <div className="flex gap-4 text-sm text-gray-500 dark:text-gray-400">
         {viewMode === 'flat' && <span>Showing {filteredTasks.length} of {tasks.length} tasks</span>}
-        {viewMode === 'goals' && <span>{goals.length} goals</span>}
-        {viewMode === 'projects' && <span>{projects.length} projects</span>}
-        {viewMode === 'issues' && <span>{issues.length} issues</span>}
+        {viewMode === 'categories' && <span>{goals.length} goals, {projects.length} projects, {tasks.length} tasks, {issues.length} issues</span>}
         {viewMode === 'hierarchy' && <span>{goals.length} goals, {projects.length} projects, {tasks.length} tasks, {issues.length} issues</span>}
       </div>
     </div>

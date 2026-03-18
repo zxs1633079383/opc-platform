@@ -222,13 +222,19 @@ export async function fetchGoalStats(goalId: string): Promise<HierarchyStats> {
   return fetchJson<HierarchyStats>(`${API_BASE}/goals/${goalId}/stats`)
 }
 
-export async function createGoal(data: { name: string; description?: string; owner?: string; deadline?: string }): Promise<Goal> {
+export async function createGoal(data: {
+  name: string; description?: string; owner?: string; deadline?: string;
+  autoDecompose?: boolean; approval?: string;
+}): Promise<Goal> {
   const response = await fetch(`${API_BASE}/goals`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   })
-  if (!response.ok) throw new Error(`Failed to create goal: ${response.statusText}`)
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}))
+    throw new Error(body.error || `Failed to create goal: ${response.statusText}`)
+  }
   return response.json()
 }
 
