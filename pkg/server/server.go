@@ -828,29 +828,24 @@ func (s *Server) costDaily(c *gin.Context) {
 		return
 	}
 
-	// Aggregate costs per day for the last 7 days.
+	// Aggregate costs per day for the last 7 days using task records.
 	now := time.Now()
-	days := make([]gin.H, 7)
+	result := make([]gin.H, 7)
+	ctx := c.Request.Context()
+	allTasks, _ := s.controller.Store().ListTasks(ctx)
+
 	for i := 6; i >= 0; i-- {
 		day := now.AddDate(0, 0, -i)
 		dateStr := day.Format("2006-01-02")
-		report := s.costMgr.GenerateReport("", 24*time.Hour*time.Duration(i+1))
-		days[6-i] = gin.H{"date": dateStr, "cost": report.TotalCost}
-	}
-
-	// Re-compute properly: get report per each day.
-	result := make([]gin.H, 0, 7)
-	for i := 6; i >= 0; i-- {
-		day := now.AddDate(0, 0, -i)
-		dateStr := day.Format("2006-01-02")
-
-		// Get costs for this specific day by computing diff.
-		// Simpler approach: use the cost tracker's events directly.
 		startOfDay := time.Date(day.Year(), day.Month(), day.Day(), 0, 0, 0, 0, day.Location())
 		endOfDay := startOfDay.Add(24 * time.Hour)
-
-		dayCost := s.costMgr.DayCost(startOfDay, endOfDay)
-		result = append(result, gin.H{"date": dateStr, "cost": dayCost})
+		var dayCost float64
+		for _, t := range allTasks {
+			if t.CreatedAt.After(startOfDay) && t.CreatedAt.Before(endOfDay) {
+				dayCost += t.Cost
+			}
+		}
+		result[6-i] = gin.H{"date": dateStr, "cost": dayCost}
 	}
 	c.JSON(http.StatusOK, result)
 }
@@ -1443,65 +1438,68 @@ func (s *Server) createGoal(c *gin.Context) {
 
 	ctx := c.Request.Context()
 
-	if req.AutoDecompose && s.aiDecomposer != nil {
-		g.Phase = v1.GoalPhaseDecomposing
-		g.Status = "decomposing"
-		if err := s.controller.Store().CreateGoal(ctx, g); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-
-		// Async AI decomposition.
-		go func(goalRec v1.GoalRecord, approval string, constraints *v1.DecomposeConstraints) {
-			bgCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-			defer cancel()
-
-			if constraints != nil {
-				s.aiDecomposer.SetConstraints(constraints)
-			}
-
-			decompReq := goal.DecomposeRequest{
-				GoalID:      goalRec.ID,
-				GoalName:    goalRec.Name,
-				Description: goalRec.Description,
-			}
-			result, err := s.aiDecomposer.Decompose(bgCtx, decompReq)
-			if err != nil {
-				s.logger.Errorw("AI decomposition failed", "goalId", goalRec.ID, "error", err)
-				goalRec.Phase = v1.GoalPhaseFailed
-				goalRec.Status = "failed"
-				s.controller.Store().UpdateGoal(bgCtx, goalRec)
-				return
-			}
-
-			// Persist plan.
-			planJSON, _ := json.Marshal(result)
-			goalRec.DecompositionPlan = string(planJSON)
-
-			if approval == "auto" {
-				goalRec.Phase = v1.GoalPhaseInProgress
-				goalRec.Status = "in_progress"
-				s.controller.Store().UpdateGoal(bgCtx, goalRec)
-				s.logger.Infow("goal auto-approved", "goalId", goalRec.ID, "projects", len(result.Projects))
-			} else {
-				goalRec.Phase = v1.GoalPhasePlanned
-				goalRec.Status = "planned"
-				s.controller.Store().UpdateGoal(bgCtx, goalRec)
-				s.logger.Infow("goal planned, awaiting approval", "goalId", goalRec.ID, "projects", len(result.Projects))
-			}
-		}(g, req.Approval, req.Constraints)
-
-		g.Phase = v1.GoalPhaseDecomposing
-		g.Status = "decomposing"
-		c.JSON(http.StatusAccepted, g)
-		return
-	}
-
-	// Non-autoDecompose: simple create.
 	if err := s.controller.Store().CreateGoal(ctx, g); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+
+	if req.AutoDecompose {
+		// Use StaticDecomposer to create default project structure, then dispatch.
+		goalID := g.ID
+		projectID := uuid.New().String()
+		project := v1.ProjectRecord{
+			ID: projectID, Name: g.Name + " - main", GoalID: goalID,
+			Description: g.Description, Status: "active",
+		}
+		s.controller.Store().CreateProject(ctx, project)
+
+		// Create a task for the goal with a default agent.
+		agentName := "coder" // default agent
+		taskIssueID := uuid.New().String()
+		issue := v1.IssueRecord{
+			ID: taskIssueID, Name: "Execute: " + g.Name, ProjectID: projectID,
+			Description: g.Description, AgentRef: agentName, Status: "open",
+		}
+		s.controller.Store().CreateIssue(ctx, issue)
+
+		// Auto-create agent if not exists (Issue 3 fix).
+		s.ensureAgent(ctx, agentName)
+
+		taskID := fmt.Sprintf("task-%d", time.Now().UnixNano()/1e6)
+		task := v1.TaskRecord{
+			ID: taskID, AgentName: agentName,
+			Message:   fmt.Sprintf("[Goal: %s] %s", g.Name, g.Description),
+			Status:    v1.TaskStatusPending,
+			IssueID:   taskIssueID, ProjectID: projectID, GoalID: goalID,
+			CreatedAt: time.Now(), UpdatedAt: time.Now(),
+		}
+		if err := s.controller.Store().CreateTask(ctx, task); err == nil {
+			go func(tr v1.TaskRecord) {
+				bgCtx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+				defer cancel()
+				result, execErr := s.controller.ExecuteTask(bgCtx, tr)
+				if execErr != nil {
+					s.logger.Warnw("goal task failed", "task", tr.ID, "error", execErr)
+				} else {
+					// Update cost on goal.
+					g2, _ := s.controller.Store().GetGoal(bgCtx, goalID)
+					g2.TokensIn += result.TokensIn
+					g2.TokensOut += result.TokensOut
+					g2.Cost += result.Cost
+					g2.Phase = v1.GoalPhaseCompleted
+					g2.Status = "completed"
+					s.controller.Store().UpdateGoal(bgCtx, g2)
+				}
+			}(task)
+		}
+
+		g.Phase = v1.GoalPhaseInProgress
+		g.Status = "in_progress"
+		s.controller.Store().UpdateGoal(ctx, g)
+		c.JSON(http.StatusAccepted, g)
+		return
+	}
+
 	c.JSON(http.StatusCreated, g)
 }
 
@@ -1831,4 +1829,30 @@ func countTaskStatus(tasks []v1.TaskRecord, status v1.TaskStatus) int {
 		if t.Status == status { count++ }
 	}
 	return count
+}
+
+// ---- auto-create agent ----
+
+func (s *Server) ensureAgent(ctx context.Context, name string) {
+	if _, err := s.controller.GetAgent(ctx, name); err == nil {
+		return // Already exists
+	}
+	s.logger.Infow("auto-creating agent", "name", name)
+	spec := v1.AgentSpec{
+		APIVersion: v1.APIVersion, Kind: v1.KindAgentSpec,
+		Metadata: v1.Metadata{Name: name},
+		Spec: v1.AgentSpecBody{
+			Type:     v1.AgentTypeClaudeCode,
+			Runtime:  v1.RuntimeConfig{Model: v1.ModelConfig{Provider: "anthropic", Name: "claude-sonnet-4"}, Timeout: v1.TimeoutConfig{Task: "600s"}},
+			Context:  v1.ContextConfig{Workdir: "/tmp/opc"},
+			Recovery: v1.RecoveryConfig{Enabled: true, MaxRestarts: 3},
+		},
+	}
+	if err := s.controller.Apply(ctx, spec); err != nil {
+		s.logger.Warnw("failed to auto-create agent", "name", name, "error", err)
+		return
+	}
+	if err := s.controller.StartAgent(ctx, name); err != nil {
+		s.logger.Warnw("failed to auto-start agent", "name", name, "error", err)
+	}
 }
