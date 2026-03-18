@@ -59,6 +59,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	if stateDir != "" {
 		os.MkdirAll(stateDir, 0o755)
 		viper.Set("stateDir", stateDir)
+		config.StateDirOverride = stateDir // Also set global override for federation etc.
 	}
 
 	// Initialize OpenTelemetry tracer.

@@ -12,6 +12,10 @@ import (
 // Logger is the global logger instance.
 var Logger *zap.SugaredLogger
 
+// StateDirOverride, when non-empty, overrides the default state directory.
+// Set this before calling GetStateDir (e.g. from --state-dir CLI flag).
+var StateDirOverride string
+
 // Config represents the OPC Platform configuration.
 type Config struct {
 	// DefaultOutput is the default output format (json, yaml, table).
@@ -42,8 +46,12 @@ func GetConfigDir() string {
 	return filepath.Join(home, ".opc")
 }
 
-// GetStateDir returns the path to ~/.opc/state/.
+// GetStateDir returns the state directory path.
+// If StateDirOverride is set (via --state-dir), it takes precedence.
 func GetStateDir() string {
+	if StateDirOverride != "" {
+		return StateDirOverride
+	}
 	return filepath.Join(GetConfigDir(), "state")
 }
 
