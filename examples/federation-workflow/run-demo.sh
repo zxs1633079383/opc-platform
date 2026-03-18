@@ -163,7 +163,7 @@ fi
 echo ""
 log "下发联邦 Goal（带依赖编排）..."
 
-GOAL_RESPONSE=$(curl -s -X POST "${MASTER}/api/federation/goals" \
+GOAL_RESPONSE=$(curl -s -X POST "${MASTER}/api/goals/federated" \
     -H "Content-Type: application/json" \
     -d "{
   \"name\": \"实现用户登录功能\",

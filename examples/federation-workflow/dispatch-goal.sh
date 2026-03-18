@@ -22,7 +22,7 @@ GOAL=$(cat goal-login-feature.json \
   | sed "s/<FRONTEND_COMPANY_ID>/${FRONTEND_ID}/g" \
   | sed "s/<BACKEND_COMPANY_ID>/${BACKEND_ID}/g")
 
-curl -sf -X POST "${MASTER}/api/federation/goals" \
+curl -sf -X POST "${MASTER}/api/goals/federated" \
   -H "Content-Type: application/json" \
   -d "$GOAL" | jq .
 
