@@ -1,0 +1,33 @@
+{
+  "name": "实现用户登录功能",
+  "description": "完整的用户登录功能，包含 UI 设计、前后端开发。设计团队出设计稿和交互标注，前端根据设计稿实现 UI，后端实现 REST API，前后端需要先对齐接口文档。",
+  "projects": [
+    {
+      "name": "ui-design",
+      "companyId": "<DESIGN_COMPANY_ID>",
+      "agent": "designer",
+      "description": "设计登录页面，输出：1) 登录页高保真设计稿 2) 交互标注文档 3) 切图资源清单"
+    },
+    {
+      "name": "api-spec",
+      "companyId": "<BACKEND_COMPANY_ID>",
+      "agent": "coder",
+      "description": "根据登录功能需求，定义 REST API 接口文档（OpenAPI 格式），包含：POST /api/auth/login, POST /api/auth/register, GET /api/auth/me",
+      "dependencies": ["ui-design"]
+    },
+    {
+      "name": "frontend-dev",
+      "companyId": "<FRONTEND_COMPANY_ID>",
+      "agent": "coder",
+      "description": "根据 UI 设计稿和 API 接口文档，实现前端登录页面",
+      "dependencies": ["ui-design", "api-spec"]
+    },
+    {
+      "name": "backend-dev",
+      "companyId": "<BACKEND_COMPANY_ID>",
+      "agent": "coder",
+      "description": "根据 API 接口文档，实现后端登录 REST API",
+      "dependencies": ["api-spec"]
+    }
+  ]
+}
