@@ -9,13 +9,15 @@ import (
 	"syscall"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 	"github.com/zlc-ai/opc-platform/internal/config"
 	"github.com/zlc-ai/opc-platform/pkg/cost"
 	"github.com/zlc-ai/opc-platform/pkg/federation"
 	"github.com/zlc-ai/opc-platform/pkg/gateway"
-	tgchannel "github.com/zlc-ai/opc-platform/pkg/gateway/telegram"
 	dcchannel "github.com/zlc-ai/opc-platform/pkg/gateway/discord"
+	tgchannel "github.com/zlc-ai/opc-platform/pkg/gateway/telegram"
 	"github.com/zlc-ai/opc-platform/pkg/server"
+	opctrace "github.com/zlc-ai/opc-platform/pkg/trace"
 )
 
 var serveCmd = &cobra.Command{
@@ -32,18 +34,53 @@ operations through it instead of creating ephemeral controllers.`,
 }
 
 var (
-	servePort int
-	serveHost string
+	servePort    int
+	serveHost    string
+	stateDir     string
+	otelEnabled  bool
+	otelEndpoint string
+	otelService  string
 )
 
 func init() {
 	serveCmd.Flags().IntVar(&servePort, "port", 9527, "HTTP listen port")
 	serveCmd.Flags().StringVar(&serveHost, "host", "127.0.0.1", "HTTP listen host")
+	serveCmd.Flags().StringVar(&stateDir, "state-dir", "", "state directory (default ~/.opc/state)")
+	serveCmd.Flags().BoolVar(&otelEnabled, "otel", false, "enable OpenTelemetry tracing")
+	serveCmd.Flags().StringVar(&otelEndpoint, "otel-endpoint", "localhost:4318", "OTLP HTTP endpoint")
+	serveCmd.Flags().StringVar(&otelService, "otel-service", "", "OTel service name (default: opc-{port})")
 	rootCmd.AddCommand(serveCmd)
 }
 
 func runServe(cmd *cobra.Command, args []string) error {
 	logger := config.Logger
+
+	// Override state dir if flag provided (enables running multiple instances).
+	if stateDir != "" {
+		os.MkdirAll(stateDir, 0o755)
+		viper.Set("stateDir", stateDir)
+	}
+
+	// Initialize OpenTelemetry tracer.
+	if otelService == "" {
+		otelService = fmt.Sprintf("opc-%d", servePort)
+	}
+	shutdownTracer, err := opctrace.InitTracer(opctrace.Config{
+		Enabled:      otelEnabled,
+		OTLPEndpoint: otelEndpoint,
+		ServiceName:  otelService,
+	})
+	if err != nil {
+		return fmt.Errorf("init tracer: %w", err)
+	}
+	defer shutdownTracer(context.Background())
+
+	if otelEnabled {
+		logger.Infow("OpenTelemetry tracing enabled",
+			"endpoint", otelEndpoint,
+			"service", otelService,
+		)
+	}
 
 	// Create controller (persistent for daemon lifetime).
 	ctrl, cleanup, err := getController()

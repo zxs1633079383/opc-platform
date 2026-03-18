@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/spf13/viper"
 	"github.com/zlc-ai/opc-platform/internal/config"
 	"github.com/zlc-ai/opc-platform/pkg/adapter"
 	"github.com/zlc-ai/opc-platform/pkg/adapter/claudecode"
@@ -26,7 +27,11 @@ func getController() (*controller.Controller, func(), error) {
 		return nil, nil, err
 	}
 
-	dbPath := filepath.Join(config.GetStateDir(), "opc.db")
+	stDir := viper.GetString("stateDir")
+	if stDir == "" {
+		stDir = config.GetStateDir()
+	}
+	dbPath := filepath.Join(stDir, "opc.db")
 	store, err := sqlite.New(dbPath)
 	if err != nil {
 		return nil, nil, err
