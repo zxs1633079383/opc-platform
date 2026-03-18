@@ -23,20 +23,22 @@ const (
 
 // Company represents an independent OPC instance in the federation.
 type Company struct {
-	ID       string        `json:"id"`
-	Name     string        `json:"name"`
-	Endpoint string        `json:"endpoint"`
-	Type     CompanyType   `json:"type"`
-	Status   CompanyStatus `json:"status"`
-	Agents   []string      `json:"agents,omitempty"`
-	APIKey   string        `json:"apiKey,omitempty"`
-	JoinedAt time.Time     `json:"joinedAt"`
+	ID           string        `json:"id"`
+	Name         string        `json:"name"`
+	Endpoint     string        `json:"endpoint"`
+	DashboardURL string        `json:"dashboardUrl,omitempty"`
+	Type         CompanyType   `json:"type"`
+	Status       CompanyStatus `json:"status"`
+	Agents       []string      `json:"agents,omitempty"`
+	APIKey       string        `json:"apiKey,omitempty"`
+	JoinedAt     time.Time     `json:"joinedAt"`
 }
 
 // CompanyRegistration is the request payload for registering a company.
 type CompanyRegistration struct {
-	Name     string      `json:"name"`
-	Endpoint string      `json:"endpoint"`
-	Type     CompanyType `json:"type"`
-	Agents   []string    `json:"agents,omitempty"`
+	Name         string      `json:"name"`
+	Endpoint     string      `json:"endpoint"`
+	DashboardURL string      `json:"dashboardUrl,omitempty"`
+	Type         CompanyType `json:"type"`
+	Agents       []string    `json:"agents,omitempty"`
 }

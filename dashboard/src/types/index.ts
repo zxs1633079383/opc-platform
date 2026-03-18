@@ -116,6 +116,7 @@ export interface Company {
   id: string
   name: string
   endpoint: string
+  dashboardUrl?: string
   type: 'software' | 'operations' | 'sales' | 'custom'
   status: 'Online' | 'Offline' | 'Busy'
   agents?: string[]

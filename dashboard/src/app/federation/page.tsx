@@ -153,8 +153,8 @@ function CompanyDetailPanel({ company }: { company: Company }) {
     }
   }, [tasks])
 
-  // Derive the dashboard URL from the company endpoint.
-  const dashboardUrl = company.endpoint.replace(/\/api\/?$/, '')
+  // Use explicit dashboardUrl if provided, otherwise derive from endpoint.
+  const dashboardUrl = company.dashboardUrl || company.endpoint.replace(/\/api\/?$/, '')
 
   return (
     <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700 space-y-4">
@@ -331,12 +331,25 @@ function CompanyCard({
         {/* Info section */}
         <div className="space-y-2.5 text-sm">
           <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400">
+            <span className="text-xs font-medium text-gray-400 w-8">API</span>
             <span className="truncate">{company.endpoint}</span>
           </div>
+          {company.dashboardUrl && (
+            <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400">
+              <span className="text-xs font-medium text-gray-400 w-8">UI</span>
+              <a
+                href={company.dashboardUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="truncate text-primary-500 hover:text-primary-600 hover:underline"
+              >
+                {company.dashboardUrl}
+              </a>
+            </div>
+          )}
           <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400">
             <span>{company.agents?.length || 0} agents</span>
-          </div>
-          <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400">
+            <span className="text-gray-300 dark:text-gray-600">|</span>
             <span>Joined {formatRelativeTime(company.joinedAt)}</span>
           </div>
         </div>
@@ -406,10 +419,11 @@ function RegisterModal({
 }: {
   isOpen: boolean
   onClose: () => void
-  onSubmit: (data: { name: string; endpoint: string; type: string; agents?: string[] }) => void
+  onSubmit: (data: { name: string; endpoint: string; dashboardUrl?: string; type: string; agents?: string[] }) => void
 }) {
   const [name, setName] = useState('')
   const [endpoint, setEndpoint] = useState('')
+  const [dashboardUrl, setDashboardUrl] = useState('')
   const [type, setType] = useState('software')
   const [agentsStr, setAgentsStr] = useState('')
 
@@ -421,9 +435,10 @@ function RegisterModal({
       .split(',')
       .map((s) => s.trim())
       .filter(Boolean)
-    onSubmit({ name, endpoint, type, agents: agents.length > 0 ? agents : undefined })
+    onSubmit({ name, endpoint, dashboardUrl: dashboardUrl || undefined, type, agents: agents.length > 0 ? agents : undefined })
     setName('')
     setEndpoint('')
+    setDashboardUrl('')
     setType('software')
     setAgentsStr('')
   }
@@ -470,6 +485,21 @@ function RegisterModal({
             />
             <p className="mt-1 text-xs text-gray-400">
               The URL of the remote OPC Platform instance
+            </p>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Dashboard URL (optional)
+            </label>
+            <input
+              type="url"
+              value={dashboardUrl}
+              onChange={(e) => setDashboardUrl(e.target.value)}
+              placeholder="http://192.168.1.100:3001"
+              className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm"
+            />
+            <p className="mt-1 text-xs text-gray-400">
+              The OPC dashboard URL for this company (opens in new tab)
             </p>
           </div>
           <div>

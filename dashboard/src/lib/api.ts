@@ -101,6 +101,7 @@ export async function fetchCompanies(): Promise<Company[]> {
 export async function registerCompany(data: {
   name: string
   endpoint: string
+  dashboardUrl?: string
   type: string
   agents?: string[]
 }): Promise<Company> {

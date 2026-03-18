@@ -75,14 +75,15 @@ func (fc *FederationController) RegisterCompany(reg CompanyRegistration) (*Compa
 	}
 
 	company := &Company{
-		ID:       uuid.New().String()[:8],
-		Name:     reg.Name,
-		Endpoint: reg.Endpoint,
-		Type:     CompanyType(reg.Type),
-		Status:   initialStatus,
-		Agents:   reg.Agents,
-		APIKey:   GenerateAPIKey(),
-		JoinedAt: time.Now().UTC(),
+		ID:           uuid.New().String()[:8],
+		Name:         reg.Name,
+		Endpoint:     reg.Endpoint,
+		DashboardURL: reg.DashboardURL,
+		Type:         CompanyType(reg.Type),
+		Status:       initialStatus,
+		Agents:       reg.Agents,
+		APIKey:       GenerateAPIKey(),
+		JoinedAt:     time.Now().UTC(),
 	}
 
 	fc.companies[company.ID] = company
