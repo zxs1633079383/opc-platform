@@ -45,6 +45,8 @@ type Project struct {
 	Dependencies []string      `json:"dependencies,omitempty"`
 	Status       ProjectStatus `json:"status,omitempty"`
 	Result       string        `json:"result,omitempty"`
+	Round        int           `json:"round,omitempty"`    // current A2A conversation round
+	MaxRounds    int           `json:"maxRounds,omitempty"` // max rounds before forced accept (default 3)
 }
 
 // FederatedGoalRun tracks the execution state of a federated goal with project dependencies.

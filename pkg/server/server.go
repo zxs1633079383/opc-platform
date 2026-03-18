@@ -41,6 +41,7 @@ type Server struct {
 	httpServer   *http.Server
 	config       Config
 	aiDecomposer *goal.AIDecomposer
+	goalDriver   *goal.GoalDriver
 	retryQueue   *federation.RetryQueue
 
 	// federatedGoalRuns tracks running federated goals for dependency-aware dispatch.
@@ -80,6 +81,7 @@ func New(
 		logger:            logger,
 		config:            config,
 		aiDecomposer:      goal.NewAIDecomposer(adapter, logger),
+		goalDriver:        goal.NewGoalDriver(adapter, logger),
 		retryQueue:        federation.NewRetryQueue(logger),
 		federatedGoalRuns: make(map[string]*goal.FederatedGoalRun),
 	}
@@ -1387,19 +1389,13 @@ func (s *Server) advanceFederatedGoal(cb FederationCallback) {
 		return
 	}
 
-	// Find the project by projectID and mark it.
+	// Find the project by projectID.
 	var completedProjectName string
+	var completedProject *goal.Project
 	for name, proj := range run.Projects {
 		if proj.ID == cb.ProjectID {
 			completedProjectName = name
-			if cb.Status == "completed" {
-				proj.Status = goal.ProjectCompleted
-				proj.Result = cb.Result
-				run.Results[name] = cb.Result
-			} else {
-				proj.Status = goal.ProjectFailed
-				proj.Result = cb.Result
-			}
+			completedProject = proj
 			break
 		}
 	}
@@ -1410,15 +1406,14 @@ func (s *Server) advanceFederatedGoal(cb FederationCallback) {
 		return
 	}
 
-	s.logger.Infow("project status updated",
-		"goalId", cb.GoalID,
-		"project", completedProjectName,
-		"status", cb.Status,
-	)
-
-	// Check if any failed project should halt the goal.
 	if cb.Status == "failed" {
-		// Check if any downstream project depends on the failed one.
+		completedProject.Status = goal.ProjectFailed
+		completedProject.Result = cb.Result
+		s.logger.Infow("project failed",
+			"goalId", cb.GoalID,
+			"project", completedProjectName,
+		)
+		// Cascade failure to downstream.
 		for _, proj := range run.Projects {
 			for _, dep := range proj.Dependencies {
 				if dep == completedProjectName && proj.Status == goal.ProjectPending {
@@ -1431,6 +1426,122 @@ func (s *Server) advanceFederatedGoal(cb FederationCallback) {
 					)
 				}
 			}
+		}
+	} else {
+		// Status == "completed" — assess result quality (A2A dialogue).
+		maxRounds := completedProject.MaxRounds
+		if maxRounds == 0 {
+			maxRounds = 3 // default
+		}
+		completedProject.Round++
+
+		s.logger.Infow("assessing project result",
+			"goalId", cb.GoalID,
+			"project", completedProjectName,
+			"round", completedProject.Round,
+			"maxRounds", maxRounds,
+			"resultLen", len(cb.Result),
+		)
+
+		// Assess result quality — does it satisfy the project requirement?
+		assessment, assessErr := s.goalDriver.AssessResult(
+			context.Background(),
+			run.GoalName,
+			completedProject.Description,
+			cb.Result,
+		)
+
+		if assessErr != nil {
+			s.logger.Warnw("assessment failed, accepting result",
+				"goalId", cb.GoalID, "project", completedProjectName, "error", assessErr)
+			assessment = &goal.AssessmentResult{Satisfied: true, Reason: "assessment error, accepted by default"}
+		}
+
+		if !assessment.Satisfied && completedProject.Round < maxRounds {
+			// Result not satisfactory — re-dispatch with follow-up instruction (A2A dialogue).
+			s.logger.Infow("result not satisfactory, re-dispatching (A2A)",
+				"goalId", cb.GoalID,
+				"project", completedProjectName,
+				"round", completedProject.Round,
+				"reason", assessment.Reason,
+			)
+
+			completedProject.Status = goal.ProjectRunning
+			completedProject.Result = cb.Result // store partial result
+
+			// Re-dispatch to the same company with follow-up instruction.
+			followUpMessage := fmt.Sprintf(
+				"[Federated Goal: %s] (Round %d/%d)\n\n## 继续完成任务\n%s\n\n## 上一轮输出\n%s",
+				run.GoalName,
+				completedProject.Round+1, maxRounds,
+				assessment.FollowUp,
+				truncate(cb.Result, 1000),
+			)
+
+			// Build dispatch payload.
+			company, compErr := s.federation.GetCompany(completedProject.CompanyID)
+			if compErr != nil {
+				s.logger.Errorw("re-dispatch: company not found", "companyId", completedProject.CompanyID)
+				completedProject.Status = goal.ProjectFailed
+			} else {
+				agent := "coder"
+				if len(company.Agents) > 0 {
+					agent = company.Agents[0]
+				}
+
+				lineageStr, _ := goal.LineageToJSON(nil)
+				payload := map[string]interface{}{
+					"agent":       agent,
+					"message":     followUpMessage,
+					"callbackURL": run.CallbackURL,
+					"goalId":      run.GoalID,
+					"projectId":   completedProject.ID,
+					"lineage":     lineageStr,
+				}
+
+				// Restore trace context for dispatch.
+				dispatchCtx := context.Background()
+				if run.TraceContext != "" {
+					carrier := propagation.MapCarrier{}
+					carrier.Set("traceparent", run.TraceContext)
+					dispatchCtx = otel.GetTextMapPropagator().Extract(dispatchCtx, carrier)
+				}
+
+				transport := s.federation.Transport()
+				_, sendErr := transport.SendWithContext(dispatchCtx, company.Endpoint, "POST", "/api/run", payload)
+				if sendErr != nil {
+					s.logger.Errorw("re-dispatch failed", "project", completedProjectName, "error", sendErr)
+					completedProject.Status = goal.ProjectFailed
+				} else {
+					s.logger.Infow("re-dispatched project (A2A round)",
+						"goalId", cb.GoalID,
+						"project", completedProjectName,
+						"round", completedProject.Round,
+						"agent", agent,
+					)
+					return // Don't advance — wait for next callback
+				}
+			}
+		} else {
+			// Result satisfactory OR max rounds reached — mark completed.
+			if !assessment.Satisfied {
+				s.logger.Warnw("max rounds reached, force-accepting result",
+					"goalId", cb.GoalID,
+					"project", completedProjectName,
+					"round", completedProject.Round,
+					"reason", assessment.Reason,
+				)
+			} else {
+				s.logger.Infow("result assessed as satisfactory",
+					"goalId", cb.GoalID,
+					"project", completedProjectName,
+					"round", completedProject.Round,
+					"reason", assessment.Reason,
+				)
+			}
+			completedProject.Status = goal.ProjectCompleted
+			completedProject.Result = cb.Result
+			run.Results[completedProjectName] = cb.Result
 		}
 	}
 
