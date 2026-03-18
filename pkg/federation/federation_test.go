@@ -102,8 +102,9 @@ func TestRegisterCompany(t *testing.T) {
 	if company.Name != "dev-team" {
 		t.Errorf("expected name dev-team, got %s", company.Name)
 	}
-	if company.Status != CompanyStatusOffline {
-		t.Errorf("expected status Offline, got %s", company.Status)
+	// Mock transport Ping returns nil (success), so initial status should be Online.
+	if company.Status != CompanyStatusOnline {
+		t.Errorf("expected status Online, got %s", company.Status)
 	}
 	if company.Type != CompanyTypeSoftware {
 		t.Errorf("expected type software, got %s", company.Type)

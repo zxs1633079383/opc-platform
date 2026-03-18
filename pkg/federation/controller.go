@@ -68,12 +68,18 @@ func (fc *FederationController) RegisterCompany(reg CompanyRegistration) (*Compa
 		}
 	}
 
+	// Probe endpoint to set initial status.
+	initialStatus := CompanyStatusOffline
+	if err := fc.transport.Ping(reg.Endpoint); err == nil {
+		initialStatus = CompanyStatusOnline
+	}
+
 	company := &Company{
 		ID:       uuid.New().String()[:8],
 		Name:     reg.Name,
 		Endpoint: reg.Endpoint,
 		Type:     CompanyType(reg.Type),
-		Status:   CompanyStatusOffline,
+		Status:   initialStatus,
 		Agents:   reg.Agents,
 		APIKey:   GenerateAPIKey(),
 		JoinedAt: time.Now().UTC(),
@@ -216,6 +222,10 @@ func (fc *FederationController) loadState() error {
 
 	if state.Companies != nil {
 		fc.companies = state.Companies
+		// Reset all companies to Offline on load; heartbeat will re-probe.
+		for _, c := range fc.companies {
+			c.Status = CompanyStatusOffline
+		}
 	}
 
 	return nil
