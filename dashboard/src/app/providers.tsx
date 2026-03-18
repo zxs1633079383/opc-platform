@@ -3,6 +3,12 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useState } from 'react'
 import { I18nProvider } from '@/lib/i18n'
+import { useSSE } from '@/lib/useSSE'
+
+function SSEConnector() {
+  useSSE()
+  return null
+}
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(
@@ -10,8 +16,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
       new QueryClient({
         defaultOptions: {
           queries: {
-            staleTime: 1000 * 30, // 30 seconds
-            refetchInterval: 1000 * 10, // 10 seconds
+            staleTime: 1000 * 5, // 5 seconds (SSE handles refresh)
           },
         },
       })
@@ -20,6 +25,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <QueryClientProvider client={queryClient}>
       <I18nProvider>
+        <SSEConnector />
         {children}
       </I18nProvider>
     </QueryClientProvider>

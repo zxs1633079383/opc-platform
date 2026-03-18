@@ -112,6 +112,7 @@ func (s *Server) Start(ctx context.Context) error {
 		// --- daemon lifecycle ---
 		api.GET("/health", s.healthCheck)
 		api.GET("/status", s.clusterStatus)
+		api.GET("/events", s.sseEvents) // Server-Sent Events for real-time updates
 
 		// --- apply (YAML in body) ---
 		api.POST("/apply", s.applyResource)
@@ -1490,10 +1491,9 @@ func (s *Server) createGoal(c *gin.Context) {
 			}
 		}(g, req.Approval, req.Constraints)
 
-		c.JSON(http.StatusAccepted, gin.H{
-			"id": g.ID, "name": g.Name, "phase": "decomposing",
-			"message": "goal created, AI decomposition in progress",
-		})
+		g.Phase = v1.GoalPhaseDecomposing
+		g.Status = "decomposing"
+		c.JSON(http.StatusAccepted, g)
 		return
 	}
 
@@ -1772,4 +1772,63 @@ func (s *Server) updateSettings(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "settings saved"})
+}
+
+// ---- SSE (Server-Sent Events) for real-time updates ----
+
+func (s *Server) sseEvents(c *gin.Context) {
+	c.Header("Content-Type", "text/event-stream")
+	c.Header("Cache-Control", "no-cache")
+	c.Header("Connection", "keep-alive")
+	c.Header("Access-Control-Allow-Origin", "*")
+
+	ctx := c.Request.Context()
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+
+	// Send initial snapshot
+	s.sendSSESnapshot(c)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			s.sendSSESnapshot(c)
+		}
+	}
+}
+
+func (s *Server) sendSSESnapshot(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	agents, _ := s.controller.ListAgents(ctx)
+	tasks, _ := s.controller.Store().ListTasks(ctx)
+	goals, _ := s.controller.Store().ListGoals(ctx)
+
+	// Compact summary
+	data := gin.H{
+		"agents": len(agents),
+		"tasks": gin.H{
+			"total":     len(tasks),
+			"pending":   countTaskStatus(tasks, "Pending"),
+			"running":   countTaskStatus(tasks, "Running"),
+			"completed": countTaskStatus(tasks, "Completed"),
+			"failed":    countTaskStatus(tasks, "Failed"),
+		},
+		"goals":   len(goals),
+		"ts":      time.Now().UnixMilli(),
+	}
+
+	jsonData, _ := json.Marshal(data)
+	fmt.Fprintf(c.Writer, "data: %s\n\n", jsonData)
+	c.Writer.Flush()
+}
+
+func countTaskStatus(tasks []v1.TaskRecord, status v1.TaskStatus) int {
+	count := 0
+	for _, t := range tasks {
+		if t.Status == status { count++ }
+	}
+	return count
 }

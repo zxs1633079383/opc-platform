@@ -491,34 +491,78 @@ export default function TasksPage() {
         </div>
       )}
 
-      {/* Categories View */}
+      {/* Kanban Board View */}
       {viewMode === 'categories' && (
-        <div className="space-y-4">
-          {/* Category sub-tabs */}
-          <div className="flex gap-1 bg-gray-100 dark:bg-gray-800 rounded-lg p-1 w-fit">
-            {([
-              { value: 'goals' as const, label: `Goals (${goals.length})`, icon: Target },
-              { value: 'projects' as const, label: `Projects (${projects.length})`, icon: FolderKanban },
-              { value: 'tasks' as const, label: `Tasks (${tasks.length})`, icon: ListTodo },
-              { value: 'issues' as const, label: `Issues (${issues.length})`, icon: Bot },
-            ]).map((tab) => {
-              const Icon = tab.icon
-              return (
-                <button
-                  key={tab.value}
-                  onClick={() => setCategoryTab(tab.value)}
-                  className={clsx('flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap',
-                    categoryTab === tab.value ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm' : 'text-gray-500'
-                  )}
-                >
-                  <Icon className="w-3 h-3" />{tab.label}
-                </button>
-              )
-            })}
-          </div>
+        <div className="grid grid-cols-3 gap-4 min-h-[60vh]">
 
-          {/* Category: Goals */}
-          {categoryTab === 'goals' && (
+          {/* Kanban Column: Todo */}
+          {(() => {
+            const todoTasks = tasks.filter(t => getStatusGroup(t.status) === 'todo')
+            const runningTasks = tasks.filter(t => getStatusGroup(t.status) === 'running')
+            const completeTasks = tasks.filter(t => { const g = getStatusGroup(t.status); return g === 'success' || g === 'fail' })
+
+            const KanbanCard = ({ t }: { t: Task }) => (
+              <div className="bg-white dark:bg-gray-800 rounded-lg p-3 shadow-sm border border-gray-200 dark:border-gray-700 hover:shadow-md transition-shadow">
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className={clsx('px-1.5 py-0.5 rounded text-[10px] font-semibold', statusColors[t.status])}>{getStatusLabel(t.status)}</span>
+                  <span className="text-[10px] text-gray-400">{t.agentName}</span>
+                </div>
+                <p className="text-xs text-gray-700 dark:text-gray-300 line-clamp-2">{t.message.slice(0, 100)}</p>
+                <div className="mt-2 flex items-center gap-2 text-[10px] text-gray-400">
+                  {t.goalId && <span className="text-purple-400">Goal</span>}
+                  {t.projectId && <span className="text-blue-400">Proj</span>}
+                  <span className="ml-auto">{formatDistanceToNow(new Date(t.createdAt), { addSuffix: true })}</span>
+                </div>
+              </div>
+            )
+
+            return (<>
+              {/* Todo Column */}
+              <div className="bg-gray-50 dark:bg-gray-900/50 rounded-xl p-3 flex flex-col">
+                <div className="flex items-center gap-2 mb-3 px-1">
+                  <div className="w-2.5 h-2.5 bg-gray-400 rounded-full" />
+                  <h3 className="text-sm font-semibold text-gray-600 dark:text-gray-400">Todo</h3>
+                  <span className="text-xs text-gray-400 ml-auto">{todoTasks.length}</span>
+                </div>
+                <div className="space-y-2 flex-1 overflow-y-auto max-h-[55vh]">
+                  {todoTasks.length === 0 ? <p className="text-xs text-gray-400 text-center py-4">No pending tasks</p> :
+                    todoTasks.map(t => <KanbanCard key={t.id} t={t} />)
+                  }
+                </div>
+              </div>
+
+              {/* Running Column */}
+              <div className="bg-blue-50/50 dark:bg-blue-900/10 rounded-xl p-3 flex flex-col">
+                <div className="flex items-center gap-2 mb-3 px-1">
+                  <div className="w-2.5 h-2.5 bg-blue-500 rounded-full animate-pulse" />
+                  <h3 className="text-sm font-semibold text-blue-600 dark:text-blue-400">Running</h3>
+                  <span className="text-xs text-blue-400 ml-auto">{runningTasks.length}</span>
+                </div>
+                <div className="space-y-2 flex-1 overflow-y-auto max-h-[55vh]">
+                  {runningTasks.length === 0 ? <p className="text-xs text-gray-400 text-center py-4">No running tasks</p> :
+                    runningTasks.map(t => <KanbanCard key={t.id} t={t} />)
+                  }
+                </div>
+              </div>
+
+              {/* Complete Column */}
+              <div className="bg-green-50/50 dark:bg-green-900/10 rounded-xl p-3 flex flex-col">
+                <div className="flex items-center gap-2 mb-3 px-1">
+                  <div className="w-2.5 h-2.5 bg-green-500 rounded-full" />
+                  <h3 className="text-sm font-semibold text-green-600 dark:text-green-400">Complete</h3>
+                  <span className="text-xs text-green-400 ml-auto">{completeTasks.length}</span>
+                </div>
+                <div className="space-y-2 flex-1 overflow-y-auto max-h-[55vh]">
+                  {completeTasks.length === 0 ? <p className="text-xs text-gray-400 text-center py-4">No completed tasks</p> :
+                    completeTasks.map(t => <KanbanCard key={t.id} t={t} />)
+                  }
+                </div>
+              </div>
+            </>)
+          })()}
+
+          {/* Remove old category sub-views — replaced by Kanban above */}
+          {false && (
         <div className="bg-white dark:bg-gray-900 rounded-xl shadow-sm border border-gray-200 dark:border-gray-800 divide-y divide-gray-100 dark:divide-gray-800">
           {goals.length === 0 ? (
             <p className="p-8 text-center text-gray-400">No goals found</p>
@@ -666,6 +710,7 @@ export default function TasksPage() {
           )}
 
         </div>
+      )}
       )}
 
       {/* Summary */}
