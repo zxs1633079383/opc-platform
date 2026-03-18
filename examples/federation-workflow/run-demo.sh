@@ -32,7 +32,9 @@ stop_all() {
         fi
     done
     pkill -f "opctl serve" 2>/dev/null || true
-    pkill -f "next start" 2>/dev/null || true
+    # Kill dashboard on port 3000
+    pid_3000=$(lsof -ti :3000 2>/dev/null || true)
+    [ -n "$pid_3000" ] && kill "$pid_3000" 2>/dev/null || true
     sleep 1
     log "全部停止"
 }
@@ -128,38 +130,16 @@ for port in 9527 9528 9529 9530; do
     fi
 done
 
-# ─── 启动各节点 Dashboard ─────────────────────────────────────────────────────
+# ─── 启动 Master Dashboard ────────────────────────────────────────────────────
 DASHBOARD_DIR="${PROJECT_ROOT}/dashboard"
-if [ -d "$DASHBOARD_DIR" ] && [ -d "${DASHBOARD_DIR}/node_modules" ]; then
-    log "启动各节点 Dashboard..."
-
-    # Master dashboard (:3000, default)
-    NEXT_PUBLIC_API_URL=http://localhost:9527/api PORT=3000 \
-        npx --prefix "$DASHBOARD_DIR" next start -p 3000 \
-        > "${BASE_DIR}/master/dashboard.log" 2>&1 &
-    log "  Master   Dashboard → :3000"
-
-    # Design dashboard (:3001)
-    NEXT_PUBLIC_API_URL=http://localhost:9528/api PORT=3001 \
-        npx --prefix "$DASHBOARD_DIR" next start -p 3001 \
-        > "${BASE_DIR}/design/dashboard.log" 2>&1 &
-    log "  Design   Dashboard → :3001"
-
-    # Frontend dashboard (:3002)
-    NEXT_PUBLIC_API_URL=http://localhost:9529/api PORT=3002 \
-        npx --prefix "$DASHBOARD_DIR" next start -p 3002 \
-        > "${BASE_DIR}/frontend/dashboard.log" 2>&1 &
-    log "  Frontend Dashboard → :3002"
-
-    # Backend dashboard (:3003)
-    NEXT_PUBLIC_API_URL=http://localhost:9530/api PORT=3003 \
-        npx --prefix "$DASHBOARD_DIR" next start -p 3003 \
-        > "${BASE_DIR}/backend/dashboard.log" 2>&1 &
-    log "  Backend  Dashboard → :3003"
-
+if [ -d "$DASHBOARD_DIR" ] && [ -d "${DASHBOARD_DIR}/.next" ]; then
+    log "启动 Master Dashboard..."
+    (cd "$DASHBOARD_DIR" && npx next start -p 3000 \
+        > "${BASE_DIR}/master/dashboard.log" 2>&1) &
+    log "  Dashboard → :3000（Federation 页面可查看所有节点）"
     sleep 2
 else
-    warn "Dashboard 未构建，跳过 UI 启动（cd dashboard && npm run build 先构建）"
+    warn "Dashboard 未构建，跳过（cd dashboard && npm run build）"
 fi
 
 # ─── 注册联邦 ─────────────────────────────────────────────────────────────────
@@ -169,24 +149,24 @@ MASTER="http://localhost:9527"
 
 DESIGN=$(curl -s -X POST "${MASTER}/api/federation/companies" \
     -H "Content-Type: application/json" \
-    -d '{"name":"design-team","endpoint":"http://localhost:9528","dashboardUrl":"http://localhost:3001","type":"software","agents":["designer"]}')
+    -d '{"name":"design-team","endpoint":"http://localhost:9528","type":"software","agents":["designer"]}')
 DESIGN_ID=$(echo "$DESIGN" | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])" 2>/dev/null || echo "FAIL")
 DESIGN_STATUS=$(echo "$DESIGN" | python3 -c "import sys,json; print(json.load(sys.stdin)['status'])" 2>/dev/null || echo "?")
-log "  design-team   → ID: ${DESIGN_ID}  Status: ${DESIGN_STATUS}  UI: http://localhost:3001"
+log "  design-team   → ID: ${DESIGN_ID}  Status: ${DESIGN_STATUS}"
 
 FRONTEND=$(curl -s -X POST "${MASTER}/api/federation/companies" \
     -H "Content-Type: application/json" \
-    -d '{"name":"frontend-team","endpoint":"http://localhost:9529","dashboardUrl":"http://localhost:3002","type":"software","agents":["coder"]}')
+    -d '{"name":"frontend-team","endpoint":"http://localhost:9529","type":"software","agents":["coder"]}')
 FRONTEND_ID=$(echo "$FRONTEND" | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])" 2>/dev/null || echo "FAIL")
 FRONTEND_STATUS=$(echo "$FRONTEND" | python3 -c "import sys,json; print(json.load(sys.stdin)['status'])" 2>/dev/null || echo "?")
-log "  frontend-team → ID: ${FRONTEND_ID}  Status: ${FRONTEND_STATUS}  UI: http://localhost:3002"
+log "  frontend-team → ID: ${FRONTEND_ID}  Status: ${FRONTEND_STATUS}"
 
 BACKEND=$(curl -s -X POST "${MASTER}/api/federation/companies" \
     -H "Content-Type: application/json" \
-    -d '{"name":"backend-team","endpoint":"http://localhost:9530","dashboardUrl":"http://localhost:3003","type":"software","agents":["coder"]}')
+    -d '{"name":"backend-team","endpoint":"http://localhost:9530","type":"software","agents":["coder"]}')
 BACKEND_ID=$(echo "$BACKEND" | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])" 2>/dev/null || echo "FAIL")
 BACKEND_STATUS=$(echo "$BACKEND" | python3 -c "import sys,json; print(json.load(sys.stdin)['status'])" 2>/dev/null || echo "?")
-log "  backend-team  → ID: ${BACKEND_ID}  Status: ${BACKEND_STATUS}  UI: http://localhost:3003"
+log "  backend-team  → ID: ${BACKEND_ID}  Status: ${BACKEND_STATUS}"
 
 if [ "$DESIGN_ID" = "FAIL" ] || [ "$FRONTEND_ID" = "FAIL" ] || [ "$BACKEND_ID" = "FAIL" ]; then
     err "联邦注册失败，请检查日志: ${BASE_DIR}/master/stdout.log"
@@ -249,19 +229,20 @@ log "=========================================="
 log "  演示已启动！"
 log "=========================================="
 echo ""
-log "  ┌─────────────┬────────────────────────────────┬────────────────────────────────┐"
-log "  │ 节点        │ API                            │ Dashboard                      │"
-log "  ├─────────────┼────────────────────────────────┼────────────────────────────────┤"
-log "  │ Master      │ http://localhost:9527/api       │ http://localhost:3000           │"
-log "  │ Design      │ http://localhost:9528/api       │ http://localhost:3001           │"
-log "  │ Frontend    │ http://localhost:9529/api       │ http://localhost:3002           │"
-log "  │ Backend     │ http://localhost:9530/api       │ http://localhost:3003           │"
-log "  └─────────────┴────────────────────────────────┴────────────────────────────────┘"
+log "  ┌─────────────┬────────────────────────────────┐"
+log "  │ 节点        │ API                            │"
+log "  ├─────────────┼────────────────────────────────┤"
+log "  │ Master      │ http://localhost:9527/api       │"
+log "  │ Design      │ http://localhost:9528/api       │"
+log "  │ Frontend    │ http://localhost:9529/api       │"
+log "  │ Backend     │ http://localhost:9530/api       │"
+log "  └─────────────┴────────────────────────────────┘"
 echo ""
+log "  Dashboard:     http://localhost:3000"
+log "  联邦聚合视图:  http://localhost:3000/federation"
 log "  Jaeger UI:     http://localhost:16686"
 echo ""
-log "  联邦聚合视图:  http://localhost:3000 → Federation 页面"
-log "  各节点 Task:   点击 Company 卡片展开 → 或直接访问对应 Dashboard"
+log "  Federation 页面里展开 Company 卡片即可查看各节点的 Agents / Tasks / Metrics"
 echo ""
 log "  查看日志:      tail -f ${BASE_DIR}/master/stdout.log"
 log "  停止:          bash run-demo.sh stop"
