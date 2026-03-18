@@ -1,0 +1,72 @@
+services:
+  jaeger:
+    image: jaegertracing/all-in-one:1.54
+    container_name: opc-jaeger
+    ports:
+      - "16686:16686"
+      - "4318:4318"
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    restart: unless-stopped
+
+  opc-master:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: opc-master
+    command: ["opctl", "serve", "--host", "0.0.0.0", "--port", "9527", "--otel", "--otel-endpoint", "jaeger:4318", "--otel-service", "opc-master"]
+    ports:
+      - "9527:9527"
+    volumes:
+      - opc-master-data:/data/opc
+    depends_on:
+      - jaeger
+    restart: unless-stopped
+
+  opc-design:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: opc-design
+    command: ["opctl", "serve", "--host", "0.0.0.0", "--port", "9528", "--otel", "--otel-endpoint", "jaeger:4318", "--otel-service", "opc-design"]
+    ports:
+      - "9528:9528"
+    volumes:
+      - opc-design-data:/data/opc
+    depends_on:
+      - jaeger
+    restart: unless-stopped
+
+  opc-frontend:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: opc-frontend
+    command: ["opctl", "serve", "--host", "0.0.0.0", "--port", "9529", "--otel", "--otel-endpoint", "jaeger:4318", "--otel-service", "opc-frontend"]
+    ports:
+      - "9529:9529"
+    volumes:
+      - opc-frontend-data:/data/opc
+    depends_on:
+      - jaeger
+    restart: unless-stopped
+
+  opc-backend:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: opc-backend
+    command: ["opctl", "serve", "--host", "0.0.0.0", "--port", "9530", "--otel", "--otel-endpoint", "jaeger:4318", "--otel-service", "opc-backend"]
+    ports:
+      - "9530:9530"
+    volumes:
+      - opc-backend-data:/data/opc
+    depends_on:
+      - jaeger
+    restart: unless-stopped
+
+volumes:
+  opc-master-data:
+  opc-design-data:
+  opc-frontend-data:
+  opc-backend-data:
