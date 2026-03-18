@@ -110,22 +110,23 @@ func (t *HTTPTransport) Send(endpoint, method, path string, body any) ([]byte, e
 // Ping checks if a company endpoint is reachable.
 func (t *HTTPTransport) Ping(endpoint string) error {
 	start := time.Now()
-	url := fmt.Sprintf("%s/healthz", endpoint)
 
-	resp, err := t.client.Get(url)
-	if err != nil {
-		t.logger.Warnw("Ping failed", "endpoint", endpoint, "error", err, "duration", time.Since(start))
-		return fmt.Errorf("ping %s: %w", endpoint, err)
+	// Try /api/health first (OPC standard), fallback to /healthz.
+	for _, path := range []string{"/api/health", "/healthz"} {
+		url := endpoint + path
+		resp, err := t.client.Get(url)
+		if err != nil {
+			continue
+		}
+		resp.Body.Close()
+		if resp.StatusCode == http.StatusOK {
+			t.logger.Infow("Ping OK", "endpoint", endpoint, "path", path, "duration", time.Since(start))
+			return nil
+		}
 	}
-	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		t.logger.Warnw("Ping: non-OK status", "endpoint", endpoint, "statusCode", resp.StatusCode, "duration", time.Since(start))
-		return fmt.Errorf("ping %s returned %d", endpoint, resp.StatusCode)
-	}
-
-	t.logger.Infow("Ping OK", "endpoint", endpoint, "duration", time.Since(start))
-	return nil
+	t.logger.Warnw("Ping failed", "endpoint", endpoint, "duration", time.Since(start))
+	return fmt.Errorf("ping %s: all health endpoints failed", endpoint)
 }
 
 // FetchStatus retrieves the status of a remote company.

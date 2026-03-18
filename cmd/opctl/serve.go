@@ -124,8 +124,11 @@ func runServe(cmd *cobra.Command, args []string) error {
 	ctrl.SetCostTracker(costMgr)
 	ctrl.RecoverAgents(ctx)
 
-	// Initialize federation controller.
+	// Initialize federation controller + heartbeat monitor.
 	fedCtrl := federation.NewController(logger)
+	heartbeat := federation.NewHeartbeatMonitor(fedCtrl, logger)
+	heartbeat.Start()
+	defer heartbeat.Stop()
 
 	// Start HTTP server.
 	srv := server.New(ctrl, costMgr, gw, fedCtrl, server.Config{
