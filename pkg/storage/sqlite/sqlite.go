@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -44,19 +45,23 @@ func (s *sqliteStore) migrate() error {
 			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 		)`,
 		`CREATE TABLE IF NOT EXISTS tasks (
-			id         TEXT PRIMARY KEY,
-			agent_name TEXT NOT NULL,
-			message    TEXT NOT NULL,
-			status     TEXT NOT NULL DEFAULT 'Pending',
-			result     TEXT NOT NULL DEFAULT '',
-			error      TEXT NOT NULL DEFAULT '',
-			tokens_in  INTEGER NOT NULL DEFAULT 0,
-			tokens_out INTEGER NOT NULL DEFAULT 0,
-			cost       REAL NOT NULL DEFAULT 0,
-			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			started_at DATETIME,
-			ended_at   DATETIME,
+			id           TEXT PRIMARY KEY,
+			agent_name   TEXT NOT NULL,
+			message      TEXT NOT NULL,
+			status       TEXT NOT NULL DEFAULT 'Pending',
+			result       TEXT NOT NULL DEFAULT '',
+			error        TEXT NOT NULL DEFAULT '',
+			tokens_in    INTEGER NOT NULL DEFAULT 0,
+			tokens_out   INTEGER NOT NULL DEFAULT 0,
+			cost         REAL NOT NULL DEFAULT 0,
+			issue_id     TEXT NOT NULL DEFAULT '',
+			project_id   TEXT NOT NULL DEFAULT '',
+			goal_id      TEXT NOT NULL DEFAULT '',
+			lineage_json TEXT NOT NULL DEFAULT '[]',
+			created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			started_at   DATETIME,
+			ended_at     DATETIME,
 			FOREIGN KEY (agent_name) REFERENCES agents(name)
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_tasks_agent ON tasks(agent_name)`,
@@ -115,6 +120,17 @@ func (s *sqliteStore) migrate() error {
 		s.db.Exec(m) // Ignore errors (column already exists).
 	}
 
+	// Task table: add hierarchy + lineage columns.
+	taskAlterMigrations := []string{
+		"ALTER TABLE tasks ADD COLUMN issue_id TEXT NOT NULL DEFAULT ''",
+		"ALTER TABLE tasks ADD COLUMN project_id TEXT NOT NULL DEFAULT ''",
+		"ALTER TABLE tasks ADD COLUMN goal_id TEXT NOT NULL DEFAULT ''",
+		"ALTER TABLE tasks ADD COLUMN lineage_json TEXT NOT NULL DEFAULT '[]'",
+	}
+	for _, m := range taskAlterMigrations {
+		s.db.Exec(m) // Ignore errors (column already exists).
+	}
+
 	// Create projects and issues tables if missing.
 	extraTables := []string{
 		`CREATE TABLE IF NOT EXISTS projects (
@@ -137,6 +153,18 @@ func (s *sqliteStore) migrate() error {
 		if _, err := s.db.Exec(m); err != nil {
 			return fmt.Errorf("exec extra table migration: %w", err)
 		}
+	}
+
+	// Issue table: add traceability columns.
+	issueAlterMigrations := []string{
+		"ALTER TABLE issues ADD COLUMN goal_id TEXT NOT NULL DEFAULT ''",
+		"ALTER TABLE issues ADD COLUMN trace_id TEXT NOT NULL DEFAULT ''",
+		"ALTER TABLE issues ADD COLUMN span_id TEXT NOT NULL DEFAULT ''",
+		"ALTER TABLE issues ADD COLUMN parent_spans TEXT NOT NULL DEFAULT '[]'",
+		"ALTER TABLE issues ADD COLUMN lineage_json TEXT NOT NULL DEFAULT '[]'",
+	}
+	for _, m := range issueAlterMigrations {
+		s.db.Exec(m) // Ignore errors (column already exists).
 	}
 
 	return nil
@@ -220,11 +248,11 @@ func (s *sqliteStore) DeleteAgent(ctx context.Context, name string) error {
 func (s *sqliteStore) CreateTask(ctx context.Context, task v1.TaskRecord) error {
 	now := time.Now()
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO tasks (id, agent_name, message, status, result, error, tokens_in, tokens_out, cost, issue_id, project_id, goal_id, created_at, updated_at, started_at, ended_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO tasks (id, agent_name, message, status, result, error, tokens_in, tokens_out, cost, issue_id, project_id, goal_id, lineage_json, created_at, updated_at, started_at, ended_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		task.ID, task.AgentName, task.Message, string(task.Status),
 		task.Result, task.Error, task.TokensIn, task.TokensOut, task.Cost,
-		task.IssueID, task.ProjectID, task.GoalID,
+		task.IssueID, task.ProjectID, task.GoalID, task.LineageJSON,
 		now, now, task.StartedAt, task.EndedAt,
 	)
 	if err != nil {
@@ -235,7 +263,7 @@ func (s *sqliteStore) CreateTask(ctx context.Context, task v1.TaskRecord) error 
 
 func (s *sqliteStore) GetTask(ctx context.Context, id string) (v1.TaskRecord, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, agent_name, message, status, result, error, tokens_in, tokens_out, cost, issue_id, project_id, goal_id, created_at, updated_at, started_at, ended_at
+		`SELECT id, agent_name, message, status, result, error, tokens_in, tokens_out, cost, issue_id, project_id, goal_id, lineage_json, created_at, updated_at, started_at, ended_at
 		 FROM tasks WHERE id = ?`, id,
 	)
 	return scanTask(row)
@@ -243,7 +271,7 @@ func (s *sqliteStore) GetTask(ctx context.Context, id string) (v1.TaskRecord, er
 
 func (s *sqliteStore) ListTasks(ctx context.Context) ([]v1.TaskRecord, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, agent_name, message, status, result, error, tokens_in, tokens_out, cost, issue_id, project_id, goal_id, created_at, updated_at, started_at, ended_at
+		`SELECT id, agent_name, message, status, result, error, tokens_in, tokens_out, cost, issue_id, project_id, goal_id, lineage_json, created_at, updated_at, started_at, ended_at
 		 FROM tasks ORDER BY created_at DESC`)
 	if err != nil {
 		return nil, fmt.Errorf("list tasks: %w", err)
@@ -263,7 +291,7 @@ func (s *sqliteStore) ListTasks(ctx context.Context) ([]v1.TaskRecord, error) {
 
 func (s *sqliteStore) ListTasksByAgent(ctx context.Context, agentName string) ([]v1.TaskRecord, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, agent_name, message, status, result, error, tokens_in, tokens_out, cost, issue_id, project_id, goal_id, created_at, updated_at, started_at, ended_at
+		`SELECT id, agent_name, message, status, result, error, tokens_in, tokens_out, cost, issue_id, project_id, goal_id, lineage_json, created_at, updated_at, started_at, ended_at
 		 FROM tasks WHERE agent_name = ? ORDER BY created_at DESC`, agentName)
 	if err != nil {
 		return nil, fmt.Errorf("list tasks for agent %q: %w", agentName, err)
@@ -283,11 +311,11 @@ func (s *sqliteStore) ListTasksByAgent(ctx context.Context, agentName string) ([
 
 func (s *sqliteStore) UpdateTask(ctx context.Context, task v1.TaskRecord) error {
 	_, err := s.db.ExecContext(ctx,
-		`UPDATE tasks SET status=?, result=?, error=?, tokens_in=?, tokens_out=?, cost=?, issue_id=?, project_id=?, goal_id=?, updated_at=?, started_at=?, ended_at=?
+		`UPDATE tasks SET status=?, result=?, error=?, tokens_in=?, tokens_out=?, cost=?, issue_id=?, project_id=?, goal_id=?, lineage_json=?, updated_at=?, started_at=?, ended_at=?
 		 WHERE id=?`,
 		string(task.Status), task.Result, task.Error,
 		task.TokensIn, task.TokensOut, task.Cost,
-		task.IssueID, task.ProjectID, task.GoalID,
+		task.IssueID, task.ProjectID, task.GoalID, task.LineageJSON,
 		time.Now(), task.StartedAt, task.EndedAt, task.ID,
 	)
 	if err != nil {
@@ -540,7 +568,7 @@ func scanTask(s scanner) (v1.TaskRecord, error) {
 	var startedAt, endedAt sql.NullTime
 	err := s.Scan(&t.ID, &t.AgentName, &t.Message, &status,
 		&t.Result, &t.Error, &t.TokensIn, &t.TokensOut, &t.Cost,
-		&t.IssueID, &t.ProjectID, &t.GoalID,
+		&t.IssueID, &t.ProjectID, &t.GoalID, &t.LineageJSON,
 		&t.CreatedAt, &t.UpdatedAt, &startedAt, &endedAt)
 	if err != nil {
 		return t, fmt.Errorf("scan task: %w", err)
@@ -647,47 +675,74 @@ func (s *sqliteStore) ProjectStats(ctx context.Context, projectID string) (v1.Hi
 
 func (s *sqliteStore) CreateIssue(ctx context.Context, i v1.IssueRecord) error {
 	now := time.Now()
-	_, err := s.db.ExecContext(ctx, `INSERT INTO issues (id, name, project_id, description, agent_ref, status, spec_yaml, tokens_in, tokens_out, cost, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?, ?)`, i.ID, i.Name, i.ProjectID, i.Description, i.AgentRef, i.Status, i.SpecYAML, now, now)
+	parentSpansJSON, _ := json.Marshal(i.ParentSpans)
+	if i.ParentSpans == nil {
+		parentSpansJSON = []byte("[]")
+	}
+	lineage := i.LineageJSON
+	if lineage == "" {
+		lineage = "[]"
+	}
+	_, err := s.db.ExecContext(ctx, `INSERT INTO issues (id, name, project_id, description, agent_ref, status, spec_yaml, tokens_in, tokens_out, cost, goal_id, trace_id, span_id, parent_spans, lineage_json, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?, ?, ?, ?, ?, ?, ?)`,
+		i.ID, i.Name, i.ProjectID, i.Description, i.AgentRef, i.Status, i.SpecYAML,
+		i.GoalID, i.TraceID, i.SpanID, string(parentSpansJSON), lineage, now, now)
 	return err
 }
 
 func (s *sqliteStore) GetIssue(ctx context.Context, id string) (v1.IssueRecord, error) {
 	var i v1.IssueRecord
-	err := s.db.QueryRowContext(ctx, `SELECT id, name, project_id, description, COALESCE(agent_ref,''), status, COALESCE(spec_yaml,''), tokens_in, tokens_out, cost, created_at, updated_at FROM issues WHERE id = ?`, id).
-		Scan(&i.ID, &i.Name, &i.ProjectID, &i.Description, &i.AgentRef, &i.Status, &i.SpecYAML, &i.TokensIn, &i.TokensOut, &i.Cost, &i.CreatedAt, &i.UpdatedAt)
+	var parentSpansJSON string
+	err := s.db.QueryRowContext(ctx, `SELECT id, name, project_id, description, COALESCE(agent_ref,''), status, COALESCE(spec_yaml,''), tokens_in, tokens_out, cost, COALESCE(goal_id,''), COALESCE(trace_id,''), COALESCE(span_id,''), COALESCE(parent_spans,'[]'), COALESCE(lineage_json,'[]'), created_at, updated_at FROM issues WHERE id = ?`, id).
+		Scan(&i.ID, &i.Name, &i.ProjectID, &i.Description, &i.AgentRef, &i.Status, &i.SpecYAML, &i.TokensIn, &i.TokensOut, &i.Cost, &i.GoalID, &i.TraceID, &i.SpanID, &parentSpansJSON, &i.LineageJSON, &i.CreatedAt, &i.UpdatedAt)
+	if err == nil {
+		json.Unmarshal([]byte(parentSpansJSON), &i.ParentSpans)
+	}
 	return i, err
 }
 
 func (s *sqliteStore) ListIssues(ctx context.Context) ([]v1.IssueRecord, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, name, project_id, description, COALESCE(agent_ref,''), status, COALESCE(spec_yaml,''), tokens_in, tokens_out, cost, created_at, updated_at FROM issues ORDER BY created_at DESC`)
+	rows, err := s.db.QueryContext(ctx, `SELECT id, name, project_id, description, COALESCE(agent_ref,''), status, COALESCE(spec_yaml,''), tokens_in, tokens_out, cost, COALESCE(goal_id,''), COALESCE(trace_id,''), COALESCE(span_id,''), COALESCE(parent_spans,'[]'), COALESCE(lineage_json,'[]'), created_at, updated_at FROM issues ORDER BY created_at DESC`)
 	if err != nil { return nil, err }
 	defer rows.Close()
 	var result []v1.IssueRecord
 	for rows.Next() {
 		var i v1.IssueRecord
-		if err := rows.Scan(&i.ID, &i.Name, &i.ProjectID, &i.Description, &i.AgentRef, &i.Status, &i.SpecYAML, &i.TokensIn, &i.TokensOut, &i.Cost, &i.CreatedAt, &i.UpdatedAt); err != nil { continue }
+		var parentSpansJSON string
+		if err := rows.Scan(&i.ID, &i.Name, &i.ProjectID, &i.Description, &i.AgentRef, &i.Status, &i.SpecYAML, &i.TokensIn, &i.TokensOut, &i.Cost, &i.GoalID, &i.TraceID, &i.SpanID, &parentSpansJSON, &i.LineageJSON, &i.CreatedAt, &i.UpdatedAt); err != nil { continue }
+		json.Unmarshal([]byte(parentSpansJSON), &i.ParentSpans)
 		result = append(result, i)
 	}
 	return result, nil
 }
 
 func (s *sqliteStore) ListIssuesByProject(ctx context.Context, projectID string) ([]v1.IssueRecord, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, name, project_id, description, COALESCE(agent_ref,''), status, COALESCE(spec_yaml,''), tokens_in, tokens_out, cost, created_at, updated_at FROM issues WHERE project_id = ? ORDER BY created_at`, projectID)
+	rows, err := s.db.QueryContext(ctx, `SELECT id, name, project_id, description, COALESCE(agent_ref,''), status, COALESCE(spec_yaml,''), tokens_in, tokens_out, cost, COALESCE(goal_id,''), COALESCE(trace_id,''), COALESCE(span_id,''), COALESCE(parent_spans,'[]'), COALESCE(lineage_json,'[]'), created_at, updated_at FROM issues WHERE project_id = ? ORDER BY created_at`, projectID)
 	if err != nil { return nil, err }
 	defer rows.Close()
 	var result []v1.IssueRecord
 	for rows.Next() {
 		var i v1.IssueRecord
-		if err := rows.Scan(&i.ID, &i.Name, &i.ProjectID, &i.Description, &i.AgentRef, &i.Status, &i.SpecYAML, &i.TokensIn, &i.TokensOut, &i.Cost, &i.CreatedAt, &i.UpdatedAt); err != nil { continue }
+		var parentSpansJSON string
+		if err := rows.Scan(&i.ID, &i.Name, &i.ProjectID, &i.Description, &i.AgentRef, &i.Status, &i.SpecYAML, &i.TokensIn, &i.TokensOut, &i.Cost, &i.GoalID, &i.TraceID, &i.SpanID, &parentSpansJSON, &i.LineageJSON, &i.CreatedAt, &i.UpdatedAt); err != nil { continue }
+		json.Unmarshal([]byte(parentSpansJSON), &i.ParentSpans)
 		result = append(result, i)
 	}
 	return result, nil
 }
 
 func (s *sqliteStore) UpdateIssue(ctx context.Context, i v1.IssueRecord) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE issues SET name=?, description=?, agent_ref=?, status=?, tokens_in=?, tokens_out=?, cost=?, updated_at=? WHERE id=?`,
-		i.Name, i.Description, i.AgentRef, i.Status, i.TokensIn, i.TokensOut, i.Cost, time.Now(), i.ID)
+	parentSpansJSON, _ := json.Marshal(i.ParentSpans)
+	if i.ParentSpans == nil {
+		parentSpansJSON = []byte("[]")
+	}
+	lineage := i.LineageJSON
+	if lineage == "" {
+		lineage = "[]"
+	}
+	_, err := s.db.ExecContext(ctx, `UPDATE issues SET name=?, description=?, agent_ref=?, status=?, tokens_in=?, tokens_out=?, cost=?, goal_id=?, trace_id=?, span_id=?, parent_spans=?, lineage_json=?, updated_at=? WHERE id=?`,
+		i.Name, i.Description, i.AgentRef, i.Status, i.TokensIn, i.TokensOut, i.Cost,
+		i.GoalID, i.TraceID, i.SpanID, string(parentSpansJSON), lineage, time.Now(), i.ID)
 	return err
 }
 
