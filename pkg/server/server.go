@@ -20,6 +20,7 @@ import (
 	"github.com/zlc-ai/opc-platform/pkg/federation"
 	"github.com/zlc-ai/opc-platform/pkg/gateway"
 	"github.com/zlc-ai/opc-platform/pkg/goal"
+	"github.com/zlc-ai/opc-platform/pkg/storage"
 	opctrace "github.com/zlc-ai/opc-platform/pkg/trace"
 	"github.com/zlc-ai/opc-platform/pkg/workflow"
 	"go.opentelemetry.io/otel"
@@ -109,6 +110,9 @@ func (a *controllerAdapter) GetAgent(ctx context.Context, name string) (v1.Agent
 
 // Start starts the HTTP server.
 func (s *Server) Start(ctx context.Context) error {
+	// Reload active federated goal runs from DB (v0.7 restart recovery).
+	s.reloadActiveFederatedGoalRuns(ctx)
+
 	// Start retry queue for failed federation callbacks.
 	if s.retryQueue != nil {
 		go s.retryQueue.ProcessLoop(ctx)
@@ -1410,9 +1414,12 @@ func (s *Server) advanceFederatedGoal(cb FederationCallback) {
 		return
 	}
 
+	bgCtx := context.Background()
+
 	if cb.Status == "failed" {
 		completedProject.Status = goal.ProjectFailed
 		completedProject.Result = cb.Result
+		s.syncFederatedGoalProject(bgCtx, run, completedProjectName)
 		s.logger.Infow("project failed",
 			"goalId", cb.GoalID,
 			"project", completedProjectName,
@@ -1423,6 +1430,7 @@ func (s *Server) advanceFederatedGoal(cb FederationCallback) {
 				if dep == completedProjectName && proj.Status == goal.ProjectPending {
 					proj.Status = goal.ProjectFailed
 					proj.Result = fmt.Sprintf("upstream dependency %q failed", completedProjectName)
+					s.syncFederatedGoalProject(bgCtx, run, proj.Name)
 					s.logger.Warnw("cascading failure to dependent project",
 						"goalId", cb.GoalID,
 						"project", proj.Name,
@@ -1458,10 +1466,28 @@ func (s *Server) advanceFederatedGoal(cb FederationCallback) {
 		if assessErr != nil {
 			s.logger.Warnw("assessment failed, accepting result",
 				"goalId", cb.GoalID, "project", completedProjectName, "error", assessErr)
-			assessment = &goal.AssessmentResult{Satisfied: true, Reason: "assessment error, accepted by default"}
+			assessment = &goal.AssessmentResult{Satisfied: true, Reason: "assessment error, accepted by default", Category: goal.CategorySatisfied}
 		}
 
-		if !assessment.Satisfied && completedProject.Round < maxRounds {
+		// v0.7: Use category-specific max retries instead of fixed maxRounds.
+		effectiveMaxRounds := maxRounds
+		if assessment.Category != "" && assessment.Category != goal.CategorySatisfied {
+			categoryMax := assessment.Category.MaxRetries()
+			if categoryMax < effectiveMaxRounds {
+				effectiveMaxRounds = categoryMax
+			}
+		}
+
+		s.logger.Infow("assessment result",
+			"goalId", cb.GoalID,
+			"project", completedProjectName,
+			"satisfied", assessment.Satisfied,
+			"category", assessment.Category,
+			"effectiveMaxRounds", effectiveMaxRounds,
+			"round", completedProject.Round,
+		)
+
+		if !assessment.Satisfied && completedProject.Round < effectiveMaxRounds {
 			// Result not satisfactory — re-dispatch with follow-up instruction (A2A dialogue).
 			s.logger.Infow("result not satisfactory, re-dispatching (A2A)",
 				"goalId", cb.GoalID,
@@ -1472,6 +1498,7 @@ func (s *Server) advanceFederatedGoal(cb FederationCallback) {
 
 			completedProject.Status = goal.ProjectRunning
 			completedProject.Result = cb.Result // store partial result
+			s.syncFederatedGoalProject(bgCtx, run, completedProjectName)
 
 			// Re-dispatch to the same company with follow-up instruction.
 			followUpMessage := fmt.Sprintf(
@@ -1546,6 +1573,7 @@ func (s *Server) advanceFederatedGoal(cb FederationCallback) {
 			completedProject.Status = goal.ProjectCompleted
 			completedProject.Result = cb.Result
 			run.Results[completedProjectName] = cb.Result
+			s.syncFederatedGoalProject(bgCtx, run, completedProjectName)
 		}
 	}
 
@@ -1612,8 +1640,10 @@ func (s *Server) advanceFederatedGoal(cb FederationCallback) {
 			"status", run.Status,
 		)
 
+		// Sync federated goal run status to DB (v0.7).
+		s.syncFederatedGoalRunStatus(bgCtx, run)
+
 		// Update goal in database.
-		bgCtx := context.Background()
 		if g, err := s.controller.Store().GetGoal(bgCtx, cb.GoalID); err == nil {
 			if allSucceeded {
 				g.Status = "completed"
@@ -1672,6 +1702,157 @@ type federatedGoalProject struct {
 	Agent        string   `json:"agent,omitempty"`
 	Description  string   `json:"description,omitempty"`
 	Dependencies []string `json:"dependencies,omitempty"`
+}
+
+// persistFederatedGoalRun saves the FederatedGoalRun and its projects to the database.
+func (s *Server) persistFederatedGoalRun(ctx context.Context, run *goal.FederatedGoalRun, agentForProject map[string]string) {
+	store := s.controller.Store()
+	resultsJSON, _ := json.Marshal(run.Results)
+
+	rec := storage.FederatedGoalRunRecord{
+		GoalID:       run.GoalID,
+		GoalName:     run.GoalName,
+		Description:  run.Description,
+		CallbackURL:  run.CallbackURL,
+		Status:       string(run.Status),
+		TraceContext: run.TraceContext,
+		ResultsJSON:  string(resultsJSON),
+	}
+	if err := store.SaveFederatedGoalRun(ctx, rec); err != nil {
+		s.logger.Warnw("failed to persist federated goal run", "goalId", run.GoalID, "error", err)
+	}
+
+	// Compute layer index for each project.
+	projectLayer := make(map[string]int)
+	for li, layer := range run.Layers {
+		for _, p := range layer {
+			projectLayer[p.Name] = li
+		}
+	}
+
+	for name, proj := range run.Projects {
+		depsJSON, _ := json.Marshal(proj.Dependencies)
+		agent := agentForProject[name]
+		prec := storage.FederatedGoalProjectRecord{
+			GoalID:           run.GoalID,
+			ProjectID:        proj.ID,
+			ProjectName:      name,
+			CompanyID:        proj.CompanyID,
+			AgentName:        agent,
+			Description:      proj.Description,
+			Status:           string(proj.Status),
+			Result:           proj.Result,
+			Round:            proj.Round,
+			MaxRounds:        proj.MaxRounds,
+			Layer:            projectLayer[name],
+			DependenciesJSON: string(depsJSON),
+		}
+		if err := store.SaveFederatedGoalProject(ctx, prec); err != nil {
+			s.logger.Warnw("failed to persist federated goal project", "goalId", run.GoalID, "project", name, "error", err)
+		}
+	}
+}
+
+// syncFederatedGoalProject updates a single project's status in the DB.
+func (s *Server) syncFederatedGoalProject(ctx context.Context, run *goal.FederatedGoalRun, projectName string) {
+	proj, ok := run.Projects[projectName]
+	if !ok {
+		return
+	}
+	store := s.controller.Store()
+	if err := store.UpdateFederatedGoalProject(ctx, storage.FederatedGoalProjectRecord{
+		GoalID:      run.GoalID,
+		ProjectName: projectName,
+		Status:      string(proj.Status),
+		Result:      proj.Result,
+		Round:       proj.Round,
+	}); err != nil {
+		s.logger.Warnw("failed to sync federated goal project", "goalId", run.GoalID, "project", projectName, "error", err)
+	}
+}
+
+// syncFederatedGoalRunStatus updates the run's status and results in the DB.
+func (s *Server) syncFederatedGoalRunStatus(ctx context.Context, run *goal.FederatedGoalRun) {
+	store := s.controller.Store()
+	resultsJSON, _ := json.Marshal(run.Results)
+	if err := store.SaveFederatedGoalRun(ctx, storage.FederatedGoalRunRecord{
+		GoalID:       run.GoalID,
+		GoalName:     run.GoalName,
+		Description:  run.Description,
+		CallbackURL:  run.CallbackURL,
+		Status:       string(run.Status),
+		TraceContext: run.TraceContext,
+		ResultsJSON:  string(resultsJSON),
+	}); err != nil {
+		s.logger.Warnw("failed to sync federated goal run status", "goalId", run.GoalID, "error", err)
+	}
+}
+
+// reloadActiveFederatedGoalRuns loads unfinished federated goals from DB into memory on startup.
+func (s *Server) reloadActiveFederatedGoalRuns(ctx context.Context) {
+	store := s.controller.Store()
+	runs, err := store.ListActiveFederatedGoalRuns(ctx)
+	if err != nil {
+		s.logger.Warnw("failed to load active federated goal runs", "error", err)
+		return
+	}
+
+	for _, rec := range runs {
+		var results map[string]string
+		if err := json.Unmarshal([]byte(rec.ResultsJSON), &results); err != nil {
+			results = make(map[string]string)
+		}
+
+		run := &goal.FederatedGoalRun{
+			GoalID:       rec.GoalID,
+			GoalName:     rec.GoalName,
+			Description:  rec.Description,
+			CallbackURL:  rec.CallbackURL,
+			Status:       goal.GoalStatus(rec.Status),
+			Results:      results,
+			TraceContext: rec.TraceContext,
+			CreatedAt:    rec.CreatedAt,
+		}
+
+		// Load projects.
+		projRecs, err := store.ListFederatedGoalProjects(ctx, rec.GoalID)
+		if err != nil {
+			s.logger.Warnw("failed to load federated goal projects", "goalId", rec.GoalID, "error", err)
+			continue
+		}
+
+		projectMap := make(map[string]*goal.Project, len(projRecs))
+		for _, pr := range projRecs {
+			var deps []string
+			json.Unmarshal([]byte(pr.DependenciesJSON), &deps)
+			projectMap[pr.ProjectName] = &goal.Project{
+				ID:           pr.ProjectID,
+				GoalID:       pr.GoalID,
+				CompanyID:    pr.CompanyID,
+				Name:         pr.ProjectName,
+				Description:  pr.Description,
+				Dependencies: deps,
+				Status:       goal.ProjectStatus(pr.Status),
+				Result:       pr.Result,
+				Round:        pr.Round,
+				MaxRounds:    pr.MaxRounds,
+			}
+		}
+		run.Projects = projectMap
+
+		s.federatedGoalRunsMu.Lock()
+		s.federatedGoalRuns[rec.GoalID] = run
+		s.federatedGoalRunsMu.Unlock()
+
+		s.logger.Infow("reloaded federated goal run",
+			"goalId", rec.GoalID, "name", rec.GoalName,
+			"status", rec.Status, "projects", len(projectMap),
+		)
+	}
+
+	if len(runs) > 0 {
+		s.logger.Infow("federated goal recovery complete", "reloaded", len(runs))
+	}
 }
 
 func (s *Server) createFederatedGoal(c *gin.Context) {
@@ -1802,6 +1983,9 @@ func (s *Server) createFederatedGoal(c *gin.Context) {
 	s.federatedGoalRunsMu.Lock()
 	s.federatedGoalRuns[goalID] = run
 	s.federatedGoalRunsMu.Unlock()
+
+	// Persist to DB for restart recovery (v0.7).
+	s.persistFederatedGoalRun(ctx, run, agentForProject)
 
 	// Dispatch the first layer (projects with no dependencies).
 	dispatchResults := s.dispatchProjectLayer(ctx, run, layers[0], agentForProject)
