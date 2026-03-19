@@ -17,6 +17,7 @@
 | 3 | Orchestration | Week 5-6 | 🟢 已完成 | 100% |
 | 4 | Production Ready | Week 7-8 | 🟢 已完成 | 100% |
 | 5 | AI Goal Decomposition | Week 9-10 | 🔵 进行中 | 0% |
+| 6 | Production Hardening | Week 11-13 | 🟢 已完成 | 100% |
 
 **状态图例**：
 - ⚪ 未开始
@@ -821,6 +822,229 @@ opctl audit export --format json    # 导出审计日志
 
 ---
 
+# Phase 6: Production Hardening（Week 11-13）
+
+## Project 6.1: 联邦 Goal 持久化
+
+### Task 6.1.1: FederatedGoalRun 数据库存储
+**优先级**: P0 | **预估**: 2d | **状态**: 🟢
+
+| Issue | 描述 | 状态 | 负责人 |
+|-------|------|------|--------|
+| 6.1.1.1 | 新建 `federated_goal_runs` 表 (goalId, goalName, description, callbackURL, status, traceContext, createdAt, updatedAt) | ⚪ | - |
+| 6.1.1.2 | 新建 `federated_goal_projects` 表 (goalId, projectName, companyId, agentName, status, result, dependencies JSON, layer int) | ⚪ | - |
+| 6.1.1.3 | storage.go 新增 SaveFederatedGoalRun / GetFederatedGoalRun / UpdateFederatedGoalProject / ListActiveFederatedGoalRuns CRUD 方法 | ⚪ | - |
+| 6.1.1.4 | 单元测试（覆盖 CRUD + 边界条件） | ⚪ | - |
+
+**验收标准**：
+- [ ] FederatedGoalRun 持久化到 SQLite
+- [ ] 重启后可以从 DB reload 未完成的 run
+- [ ] 测试覆盖率 > 80%
+
+---
+
+### Task 6.1.2: 重启恢复逻辑
+**优先级**: P0 | **预估**: 1d | **状态**: 🟢
+
+| Issue | 描述 | 状态 | 负责人 |
+|-------|------|------|--------|
+| 6.1.2.1 | server 启动时调用 ListActiveFederatedGoalRuns() 加载未完成 run 到内存 | ⚪ | - |
+| 6.1.2.2 | 根据每个 project 的 status 判断恢复策略：Pending→重新 dispatch, Running→等待 callback 超时后重试, Completed→跳过 | ⚪ | - |
+| 6.1.2.3 | createFederatedGoal / handleCallback 流程中同步写 DB | ⚪ | - |
+| 6.1.2.4 | 集成测试：启动→创建 Goal→Kill→重启→验证恢复 | ⚪ | - |
+
+**验收标准**：
+- [ ] Kill 进程后重启，未完成的联邦 Goal 自动恢复执行
+- [ ] 已完成的 Project 不会重复执行
+- [ ] 恢复过程有审计日志
+
+---
+
+## Project 6.2: OpenClaw Token 补全
+
+### Task 6.2.1: Session Snapshot Token 提取
+**优先级**: P1 | **预估**: 1.5d | **状态**: 🟢
+
+| Issue | 描述 | 状态 | 负责人 |
+|-------|------|------|--------|
+| 6.2.1.1 | OpenClaw adapter 新增 querySessionSnapshot(sessionId) 方法，通过 WS RPC 查询 session 统计 | ⚪ | - |
+| 6.2.1.2 | Execute() 完成后，如果 result.TokensIn == 0，自动调用 snapshot 补全 | ⚪ | - |
+| 6.2.1.3 | Fallback: 基于模型定价表 + 输入/输出字符数估算 token（pkg/cost/cost.go CalculateCost 扩展） | ⚪ | - |
+| 6.2.1.4 | 单元测试（mock WS 响应 + fallback 路径） | ⚪ | - |
+
+**验收标准**：
+- [ ] OpenClaw 执行后 token 数据不再为 0
+- [ ] 有 snapshot 时用精确数据，无 snapshot 时用估算
+- [ ] 估算值在日志中标记为 `estimated: true`
+
+---
+
+## Project 6.3: 智能重试策略
+
+### Task 6.3.1: 结果分类与差异化处理
+**优先级**: P1 | **预估**: 1d | **状态**: 🟢
+
+| Issue | 描述 | 状态 | 负责人 |
+|-------|------|------|--------|
+| 6.3.1.1 | assessor.go 新增 ResultCategory 枚举：EmptyResult / ExecutionError / QualityIssue / Satisfied | ⚪ | - |
+| 6.3.1.2 | AssessResult 返回 Category 字段，heuristic 阶段先分类再决策 | ⚪ | - |
+| 6.3.1.3 | EmptyResult 策略：检查 task prompt 是否为"检查/验证"类 → 直接 pass；否则重试 1 次（非 3 次） | ⚪ | - |
+| 6.3.1.4 | ExecutionError 策略：记录错误 → 重试（最多 2 次）→ 标记 failed | ⚪ | - |
+| 6.3.1.5 | QualityIssue 策略：走现有 A2A 评审流程（最多 3 次） | ⚪ | - |
+| 6.3.1.6 | server.go handleCallback 中替换现有硬编码重试逻辑为新策略 | ⚪ | - |
+| 6.3.1.7 | 单元测试（每种 category 的决策路径） | ⚪ | - |
+
+**验收标准**：
+- [ ] 空结果不再触发 3 轮完整评审
+- [ ] 执行错误和质量问题有不同的重试上限
+- [ ] 评审 token 消耗下降 > 30%
+
+---
+
+## Project 6.4: Agent 健康检查增强
+
+### Task 6.4.1: 主动探测与自动恢复
+**优先级**: P1 | **预估**: 1.5d | **状态**: 🟢
+
+| Issue | 描述 | 状态 | 负责人 |
+|-------|------|------|--------|
+| 6.4.1.1 | lifecycle.go 健康检查 interval 改为可配置（AgentSpec.spec.health.interval，默认 30s） | ⚪ | - |
+| 6.4.1.2 | 新增连续失败计数器 consecutiveFailures，阈值可配（默认 3） | ⚪ | - |
+| 6.4.1.3 | OpenClaw adapter Health() 增强：除连接检查外，发送 ping RPC 验证 gateway 可达 | ⚪ | - |
+| 6.4.1.4 | 不健康时自动重启：先 Stop() → 等待 backoff → Start()；重启后自动恢复 Running 状态的 task | ⚪ | - |
+| 6.4.1.5 | 健康状态变更写审计日志（healthy→unhealthy, restart triggered, restart succeeded/failed） | ⚪ | - |
+| 6.4.1.6 | 单元测试 + 集成测试（模拟 agent 不健康→自动重启→恢复） | ⚪ | - |
+
+**验收标准**：
+- [ ] Agent 不响应时 3 次检查后自动重启
+- [ ] 重启后未完成任务自动续接
+- [ ] 健康事件在审计日志中可追溯
+
+---
+
+## Project 6.5: 配额执行
+
+### Task 6.5.1: Token/Cost 预算实时执行
+**优先级**: P0 | **预估**: 2d | **状态**: 🟢
+
+| Issue | 描述 | 状态 | 负责人 |
+|-------|------|------|--------|
+| 6.5.1.1 | pkg/cost/enforcer.go 新建 QuotaEnforcer：Execute 前检查 perTask/perHour/perDay token 预算 | ⚪ | - |
+| 6.5.1.2 | QuotaEnforcer 检查 CostLimit：perTask/perDay/perMonth 成本限制 | ⚪ | - |
+| 6.5.1.3 | OnExceed 策略实现：pause（暂停 agent）/ alert（仅告警继续）/ reject（拒绝任务） | ⚪ | - |
+| 6.5.1.4 | server.go 在 dispatchTask / Execute 前调用 QuotaEnforcer.Check() | ⚪ | - |
+| 6.5.1.5 | Goal 级配额：Goal 创建时可设置总预算，超限暂停整个 Goal | ⚪ | - |
+| 6.5.1.6 | 配额事件写审计日志（approaching_limit / exceeded / paused / resumed） | ⚪ | - |
+| 6.5.1.7 | API: GET /api/quota/status 查看当前配额使用情况 | ⚪ | - |
+| 6.5.1.8 | 单元测试（各种超限场景 + OnExceed 策略） | ⚪ | - |
+
+**验收标准**：
+- [ ] tokenBudget.perDay 超限时 agent 自动暂停
+- [ ] costLimit.perMonth 超限时拒绝新任务
+- [ ] 80% 阈值时发出告警
+- [ ] 测试覆盖率 > 80%
+
+---
+
+## Project 6.6: E2E 测试 CI
+
+### Task 6.6.1: GitHub Actions 集成
+**优先级**: P1 | **预估**: 1d | **状态**: 🟢
+
+| Issue | 描述 | 状态 | 负责人 |
+|-------|------|------|--------|
+| 6.6.1.1 | 新建 .github/workflows/integration-test.yml | ⚪ | - |
+| 6.6.1.2 | Mock OpenClaw Gateway（轻量 WS echo server，返回固定 token 数据） | ⚪ | - |
+| 6.6.1.3 | Mock Claude Code（shell script 模拟 --print 输出 JSON） | ⚪ | - |
+| 6.6.1.4 | CI 中运行 6 scenarios，每个 scenario 独立报告 pass/fail | ⚪ | - |
+| 6.6.1.5 | 失败时上传日志 artifact + 阻断 PR merge | ⚪ | - |
+| 6.6.1.6 | 添加 CI badge 到 README | ⚪ | - |
+
+**验收标准**：
+- [ ] PR 提交自动触发 integration test
+- [ ] 6 scenarios 全部通过才能 merge
+- [ ] CI 运行时间 < 5 分钟（mock 模式）
+
+---
+
+## Phase 6 交付物清单
+
+- [ ] 联邦 Goal 持久化 + 重启恢复
+- [ ] OpenClaw token 数据补全
+- [ ] 智能重试策略（三类分类）
+- [ ] Agent 健康检查增强 + 自动重启
+- [ ] Token/Cost 配额实时执行
+- [ ] E2E 测试 CI pipeline
+- [ ] 全部特性单元测试 (覆盖率 > 80%)
+
+---
+
+# Phase 7: Self-Evolving Loop（Week 14-16）— 闭环自主演进
+
+## Project 7.1: Observe — 运行指标采集
+
+### Task 7.1.1: 核心指标体系
+**优先级**: P0 | **预估**: 2d | **状态**: ⚪
+
+| Issue | 描述 | 状态 | 负责人 |
+|-------|------|------|--------|
+| 7.1.1.1 | pkg/evolve/metrics.go 定义指标模型：SuccessRate, AvgLatency, CostPerGoal, RetryRate, CoverageGap, ErrorPatterns | ⚪ | - |
+| 7.1.1.2 | 定期采集器 MetricsCollector（从 cost/audit/storage 聚合）| ⚪ | - |
+| 7.1.1.3 | 指标持久化到 `system_metrics` 表（时序数据，按天聚合） | ⚪ | - |
+| 7.1.1.4 | API: GET /api/system/metrics 暴露指标 | ⚪ | - |
+
+**验收标准**：
+- [ ] 系统每小时自动采集核心指标
+- [ ] 指标可通过 API 查询历史趋势
+
+---
+
+## Project 7.2: Orient — AI 分析与提案生成
+
+### Task 7.2.1: 异常检测 + RFC 生成
+**优先级**: P0 | **预估**: 2d | **状态**: ⚪
+
+| Issue | 描述 | 状态 | 负责人 |
+|-------|------|------|--------|
+| 7.2.1.1 | pkg/evolve/analyzer.go AI 分析器：输入指标趋势 → 输出异常 + 改进建议 | ⚪ | - |
+| 7.2.1.2 | RFC 模板：标题、问题描述、建议方案、预期收益、风险评估 | ⚪ | - |
+| 7.2.1.3 | API: GET /api/system/rfcs 查看待审 RFC 列表 | ⚪ | - |
+| 7.2.1.4 | API: POST /api/system/rfcs/:id/approve 人工审批 | ⚪ | - |
+
+**验收标准**：
+- [ ] 系统能自动发现异常模式并生成改进提案
+- [ ] 提案需人工审批后才能执行
+
+---
+
+## Project 7.3: Decide + Act — 自动执行改进
+
+### Task 7.3.1: RFC → Goal 自动转化
+**优先级**: P1 | **预估**: 2d | **状态**: ⚪
+
+| Issue | 描述 | 状态 | 负责人 |
+|-------|------|------|--------|
+| 7.3.1.1 | 审批通过的 RFC 自动创建 Meta-Goal（autoDecompose=true） | ⚪ | - |
+| 7.3.1.2 | Meta-Goal 执行结果自动反馈到指标系统（闭环） | ⚪ | - |
+| 7.3.1.3 | 安全阀：Meta-Goal 仅允许修改 test/docs/config，不允许改核心代码（v0.8 放开） | ⚪ | - |
+| 7.3.1.4 | Dashboard: RFC 审批面板 + 执行状态追踪 | ⚪ | - |
+
+**验收标准**：
+- [ ] 从指标异常 → RFC 生成 → 审批 → Goal 执行 → 指标验证 全闭环
+- [ ] 安全阀有效，不会修改核心生产代码
+
+---
+
+## Phase 7 交付物清单
+
+- [ ] 运行指标自动采集体系
+- [ ] AI 异常分析 + RFC 提案生成
+- [ ] RFC 审批 → Meta-Goal 自动执行
+- [ ] 安全阀 Guardrails
+- [ ] Dashboard RFC 面板
+
+---
+
 # 📅 里程碑
 
 | 里程碑 | 日期 | 交付物 |
@@ -831,6 +1055,8 @@ opctl audit export --format json    # 导出审计日志
 | M4: Production | Week 8 | 成本控制 + Gateway + Dashboard |
 | **MVP Launch** | Week 8 | 公开发布 |
 | M5: AI Goal Decomposition | Week 10 | Goal 智能分解 + Plan 审查 + Guardrails |
+| M6: Production Hardening | Week 13 | 联邦持久化 + 配额执行 + 智能重试 + CI |
+| M7: Self-Evolving Loop | Week 16 | 指标采集 + AI 分析 + RFC 闭环 |
 
 ---
 

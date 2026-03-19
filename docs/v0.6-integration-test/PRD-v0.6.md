@@ -32,7 +32,8 @@ Phase 2: Workflow + Cost + Audit                      ✅ v0.2
 Phase 3: Dashboard + Multi-Company                    ✅ v0.3
 Phase 4: Federation + Trace Propagation               ✅ v0.5
 Phase 5: Multi-Adapter + Real Integration Test   ←── ✅ v0.6 (本版本)
-Phase 6: Production Hardening                         🔲 v0.7 (下一步)
+Phase 6: Production Hardening                    ←── 🔲 v0.7 (下一步)
+Phase 7: Self-Evolving Loop                          🔲 v0.8
 ```
 
 ---
@@ -358,14 +359,35 @@ GET /api/costs/daily       → 日报
 
 ### 5.2 v0.7 规划: Production Hardening
 
-| 特性 | 说明 |
+| 特性 | 说明 | 优先级 | 预估 |
+|------|------|--------|------|
+| 联邦 Goal 持久化 | FederatedGoalRun 写入 DB, 支持重启恢复 | P0 | 3d |
+| 配额执行 | tokenBudget/costLimit 真实生效, 超限暂停/告警 | P0 | 2d |
+| OpenClaw token 补全 | 从 session snapshot 提取 token, fallback 估算 | P1 | 1.5d |
+| 智能重试策略 | 三类分类 (EmptyResult/ExecutionError/QualityIssue), 差异化处理 | P1 | 1d |
+| Agent 健康检查增强 | 可配 interval, 连续失败计数, ping RPC, 不健康自动重启 | P1 | 1.5d |
+| E2E 测试 CI | GitHub Actions + Mock Gateway/CC, 6 scenarios, 阻断 PR merge | P1 | 1d |
+
+**总预估**: ~10 工作日
+
+**关键设计决策**:
+- 联邦持久化采用 SQLite 两表方案 (`federated_goal_runs` + `federated_goal_projects`), 重启时按 project status 差异化恢复
+- 配额执行新建 `QuotaEnforcer`, 在 Execute 前拦截, 支持 pause/alert/reject 三种 OnExceed 策略
+- 智能重试将 `AssessmentResult` 扩展为 4 类 `ResultCategory`, 空结果最多重试 1 次而非 3 次
+- CI 采用 mock 模式 (WS echo server + shell script), 确保运行时间 < 5 分钟
+
+### 5.3 v0.8 展望: Self-Evolving Loop
+
+> OPC 从"被动执行工具"进化为"主动发现问题、提出改进、自我迭代的自治系统"
+
+| 阶段 | 说明 |
 |------|------|
-| 联邦 Goal 持久化 | FederatedGoalRun 写入 DB, 支持重启恢复 |
-| OpenClaw token 补全 | 从 session 日志或 snapshot 提取 token 数据 |
-| 智能重试策略 | 区分空结果/执行错误, 空结果直接通过不浪费评审 |
-| Agent 健康检查增强 | 定期探测, 不健康自动重启 |
-| 配额执行 | tokenBudget/costLimit 真实生效, 超限暂停/告警 |
-| E2E 测试 CI | integration_multi_adapter.sh 集成到 CI pipeline |
+| Observe | 运行指标自动采集 (SuccessRate/Latency/CostPerGoal/RetryRate/ErrorPatterns) |
+| Orient | AI 分析器检测异常模式, 生成 RFC 改进提案 |
+| Decide | 人工审批 RFC (v0.8 可配 auto-approve 策略) |
+| Act | 审批通过 → 自动创建 Meta-Goal → autoDecompose → 执行 → 指标验证闭环 |
+
+**安全阀**: v0.8 Meta-Goal 仅允许修改 test/docs/config, 核心代码修改需 v0.9+ 逐步放开
 
 ---
 
