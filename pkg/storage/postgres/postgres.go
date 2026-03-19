@@ -421,13 +421,15 @@ func (s *pgStore) CreateGoal(ctx context.Context, goal v1.GoalRecord) error {
 
 func (s *pgStore) GetGoal(ctx context.Context, id string) (v1.GoalRecord, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, name, description, phase, spec_yaml, decomposition_plan, decompose_cost, created_at, updated_at
+		`SELECT id, name, description, status, phase, spec_yaml, decomposition_plan, decompose_cost,
+		 tokens_in, tokens_out, cost, created_at, updated_at
 		 FROM goals WHERE id = $1`, id,
 	)
 	var g v1.GoalRecord
 	var phase string
-	err := row.Scan(&g.ID, &g.Name, &g.Description, &phase, &g.SpecYAML,
-		&g.DecompositionPlan, &g.DecomposeCost, &g.CreatedAt, &g.UpdatedAt)
+	err := row.Scan(&g.ID, &g.Name, &g.Description, &g.Status, &phase, &g.SpecYAML,
+		&g.DecompositionPlan, &g.DecomposeCost,
+		&g.TokensIn, &g.TokensOut, &g.Cost, &g.CreatedAt, &g.UpdatedAt)
 	if err != nil {
 		return g, fmt.Errorf("get goal %q: %w", id, err)
 	}
@@ -437,7 +439,8 @@ func (s *pgStore) GetGoal(ctx context.Context, id string) (v1.GoalRecord, error)
 
 func (s *pgStore) ListGoals(ctx context.Context) ([]v1.GoalRecord, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, name, description, phase, spec_yaml, decomposition_plan, decompose_cost, created_at, updated_at
+		`SELECT id, name, description, status, phase, spec_yaml, decomposition_plan, decompose_cost,
+		 tokens_in, tokens_out, cost, created_at, updated_at
 		 FROM goals ORDER BY created_at DESC`)
 	if err != nil {
 		return nil, fmt.Errorf("list goals: %w", err)
@@ -448,8 +451,9 @@ func (s *pgStore) ListGoals(ctx context.Context) ([]v1.GoalRecord, error) {
 	for rows.Next() {
 		var g v1.GoalRecord
 		var phase string
-		if err := rows.Scan(&g.ID, &g.Name, &g.Description, &phase, &g.SpecYAML,
-			&g.DecompositionPlan, &g.DecomposeCost, &g.CreatedAt, &g.UpdatedAt); err != nil {
+		if err := rows.Scan(&g.ID, &g.Name, &g.Description, &g.Status, &phase, &g.SpecYAML,
+			&g.DecompositionPlan, &g.DecomposeCost,
+			&g.TokensIn, &g.TokensOut, &g.Cost, &g.CreatedAt, &g.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan goal: %w", err)
 		}
 		g.Phase = v1.GoalPhase(phase)
@@ -460,10 +464,13 @@ func (s *pgStore) ListGoals(ctx context.Context) ([]v1.GoalRecord, error) {
 
 func (s *pgStore) UpdateGoal(ctx context.Context, goal v1.GoalRecord) error {
 	_, err := s.db.ExecContext(ctx,
-		`UPDATE goals SET name=$1, description=$2, phase=$3, spec_yaml=$4, decomposition_plan=$5, decompose_cost=$6, updated_at=$7
-		 WHERE id=$8`,
-		goal.Name, goal.Description, string(goal.Phase), goal.SpecYAML,
-		goal.DecompositionPlan, goal.DecomposeCost, time.Now(), goal.ID,
+		`UPDATE goals SET name=$1, description=$2, status=$3, phase=$4, spec_yaml=$5,
+		 decomposition_plan=$6, decompose_cost=$7,
+		 tokens_in=$8, tokens_out=$9, cost=$10, updated_at=$11
+		 WHERE id=$12`,
+		goal.Name, goal.Description, goal.Status, string(goal.Phase), goal.SpecYAML,
+		goal.DecompositionPlan, goal.DecomposeCost,
+		goal.TokensIn, goal.TokensOut, goal.Cost, time.Now(), goal.ID,
 	)
 	if err != nil {
 		return fmt.Errorf("update goal %q: %w", goal.ID, err)
