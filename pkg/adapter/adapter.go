@@ -38,7 +38,8 @@ type ExecuteResult struct {
 	Output    string  `json:"output"`
 	TokensIn  int     `json:"tokensIn"`
 	TokensOut int     `json:"tokensOut"`
-	Cost      float64 `json:"cost,omitempty"` // cost reported by the agent itself (e.g., claude total_cost_usd)
+	Cost      float64 `json:"cost,omitempty"`      // cost reported by the agent itself (e.g., claude total_cost_usd)
+	Estimated bool    `json:"estimated,omitempty"` // v0.7: true if token counts are estimated, not exact
 }
 
 // Chunk represents a streaming output chunk.

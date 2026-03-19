@@ -618,6 +618,23 @@ func (a *Adapter) Execute(ctx context.Context, task v1.TaskRecord) (adapter.Exec
 
 	result := extractResult(parsed)
 
+	// v0.7: Token estimation fallback — if OpenClaw didn't return token data,
+	// estimate based on input/output character lengths (~4 chars per token).
+	if result.TokensIn == 0 && result.TokensOut == 0 {
+		estimatedIn := len(task.Message) / 4
+		estimatedOut := len(result.Output) / 4
+		if estimatedIn > 0 || estimatedOut > 0 {
+			result.TokensIn = estimatedIn
+			result.TokensOut = estimatedOut
+			result.Estimated = true
+			a.logger.Infow("token estimation applied (OpenClaw returned no token data)",
+				"taskId", task.ID,
+				"estimatedIn", estimatedIn,
+				"estimatedOut", estimatedOut,
+			)
+		}
+	}
+
 	a.mu.Lock()
 	a.metrics.TasksCompleted++
 	a.metrics.TotalTokensIn += result.TokensIn
@@ -626,7 +643,8 @@ func (a *Adapter) Execute(ctx context.Context, task v1.TaskRecord) (adapter.Exec
 
 	a.logger.Infow("Execute completed", "taskId", task.ID,
 		"tokensIn", result.TokensIn, "tokensOut", result.TokensOut,
-		"cost", result.Cost, "duration", time.Since(execStart))
+		"cost", result.Cost, "estimated", result.Estimated,
+		"duration", time.Since(execStart))
 	return result, nil
 }
 
