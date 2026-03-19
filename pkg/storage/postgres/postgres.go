@@ -592,3 +592,95 @@ func (s *pgStore) UpdateIssue(ctx context.Context, i v1.IssueRecord) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE issues SET name=$1,description=$2,agent_ref=$3,status=$4,tokens_in=$5,tokens_out=$6,cost=$7,updated_at=$8 WHERE id=$9`, i.Name, i.Description, i.AgentRef, i.Status, i.TokensIn, i.TokensOut, i.Cost, time.Now(), i.ID); return err
 }
 func (s *pgStore) DeleteIssue(ctx context.Context, id string) error { _, err := s.db.ExecContext(ctx, "DELETE FROM issues WHERE id=$1", id); return err }
+
+// ---- Federated Goal Run operations (v0.7) ----
+
+func (s *pgStore) SaveFederatedGoalRun(ctx context.Context, run storage.FederatedGoalRunRecord) error {
+	now := time.Now()
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO federated_goal_runs (goal_id, goal_name, description, callback_url, status, trace_context, results_json, created_at, updated_at)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+		 ON CONFLICT (goal_id) DO UPDATE SET goal_name=$2, description=$3, callback_url=$4, status=$5, trace_context=$6, results_json=$7, updated_at=$9`,
+		run.GoalID, run.GoalName, run.Description, run.CallbackURL,
+		run.Status, run.TraceContext, run.ResultsJSON, now, now)
+	return err
+}
+
+func (s *pgStore) GetFederatedGoalRun(ctx context.Context, goalID string) (storage.FederatedGoalRunRecord, error) {
+	var r storage.FederatedGoalRunRecord
+	err := s.db.QueryRowContext(ctx,
+		`SELECT goal_id, goal_name, description, callback_url, status, trace_context, results_json, created_at, updated_at
+		 FROM federated_goal_runs WHERE goal_id=$1`, goalID,
+	).Scan(&r.GoalID, &r.GoalName, &r.Description, &r.CallbackURL,
+		&r.Status, &r.TraceContext, &r.ResultsJSON, &r.CreatedAt, &r.UpdatedAt)
+	return r, err
+}
+
+func (s *pgStore) UpdateFederatedGoalRunStatus(ctx context.Context, goalID string, status string) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE federated_goal_runs SET status=$1, updated_at=$2 WHERE goal_id=$3`,
+		status, time.Now(), goalID)
+	return err
+}
+
+func (s *pgStore) ListActiveFederatedGoalRuns(ctx context.Context) ([]storage.FederatedGoalRunRecord, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT goal_id, goal_name, description, callback_url, status, trace_context, results_json, created_at, updated_at
+		 FROM federated_goal_runs WHERE status NOT IN ('Completed', 'Failed') ORDER BY created_at`)
+	if err != nil { return nil, err }
+	defer rows.Close()
+	var runs []storage.FederatedGoalRunRecord
+	for rows.Next() {
+		var r storage.FederatedGoalRunRecord
+		if err := rows.Scan(&r.GoalID, &r.GoalName, &r.Description, &r.CallbackURL,
+			&r.Status, &r.TraceContext, &r.ResultsJSON, &r.CreatedAt, &r.UpdatedAt); err != nil {
+			return nil, err
+		}
+		runs = append(runs, r)
+	}
+	return runs, rows.Err()
+}
+
+func (s *pgStore) DeleteFederatedGoalRun(ctx context.Context, goalID string) error {
+	_, err := s.db.ExecContext(ctx, "DELETE FROM federated_goal_runs WHERE goal_id=$1", goalID)
+	return err
+}
+
+func (s *pgStore) SaveFederatedGoalProject(ctx context.Context, proj storage.FederatedGoalProjectRecord) error {
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO federated_goal_projects (goal_id, project_id, project_name, company_id, agent_name, description, status, result, round, max_rounds, layer, dependencies_json)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+		 ON CONFLICT (goal_id, project_name) DO UPDATE SET status=$7, result=$8, round=$9, agent_name=$5`,
+		proj.GoalID, proj.ProjectID, proj.ProjectName, proj.CompanyID,
+		proj.AgentName, proj.Description, proj.Status, proj.Result,
+		proj.Round, proj.MaxRounds, proj.Layer, proj.DependenciesJSON)
+	return err
+}
+
+func (s *pgStore) UpdateFederatedGoalProject(ctx context.Context, proj storage.FederatedGoalProjectRecord) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE federated_goal_projects SET status=$1, result=$2, round=$3, agent_name=$4
+		 WHERE goal_id=$5 AND project_name=$6`,
+		proj.Status, proj.Result, proj.Round, proj.AgentName,
+		proj.GoalID, proj.ProjectName)
+	return err
+}
+
+func (s *pgStore) ListFederatedGoalProjects(ctx context.Context, goalID string) ([]storage.FederatedGoalProjectRecord, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT goal_id, project_id, project_name, company_id, agent_name, description, status, result, round, max_rounds, layer, dependencies_json
+		 FROM federated_goal_projects WHERE goal_id=$1 ORDER BY layer, project_name`, goalID)
+	if err != nil { return nil, err }
+	defer rows.Close()
+	var projects []storage.FederatedGoalProjectRecord
+	for rows.Next() {
+		var p storage.FederatedGoalProjectRecord
+		if err := rows.Scan(&p.GoalID, &p.ProjectID, &p.ProjectName, &p.CompanyID,
+			&p.AgentName, &p.Description, &p.Status, &p.Result,
+			&p.Round, &p.MaxRounds, &p.Layer, &p.DependenciesJSON); err != nil {
+			return nil, err
+		}
+		projects = append(projects, p)
+	}
+	return projects, rows.Err()
+}

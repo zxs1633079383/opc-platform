@@ -2,9 +2,39 @@ package storage
 
 import (
 	"context"
+	"time"
 
 	v1 "github.com/zlc-ai/opc-platform/api/v1"
 )
+
+// FederatedGoalRunRecord persists a federated goal execution state.
+type FederatedGoalRunRecord struct {
+	GoalID       string    `json:"goalId"`
+	GoalName     string    `json:"goalName"`
+	Description  string    `json:"description"`
+	CallbackURL  string    `json:"callbackURL"`
+	Status       string    `json:"status"` // Pending, InProgress, Completed, Failed
+	TraceContext string    `json:"traceContext,omitempty"`
+	ResultsJSON  string    `json:"resultsJson,omitempty"` // JSON: map[string]string
+	CreatedAt    time.Time `json:"createdAt"`
+	UpdatedAt    time.Time `json:"updatedAt"`
+}
+
+// FederatedGoalProjectRecord persists a project within a federated goal run.
+type FederatedGoalProjectRecord struct {
+	GoalID         string `json:"goalId"`
+	ProjectID      string `json:"projectId"`
+	ProjectName    string `json:"projectName"`
+	CompanyID      string `json:"companyId"`
+	AgentName      string `json:"agentName,omitempty"`
+	Description    string `json:"description,omitempty"`
+	Status         string `json:"status"` // Pending, Running, Completed, Failed
+	Result         string `json:"result,omitempty"`
+	Round          int    `json:"round"`
+	MaxRounds      int    `json:"maxRounds"`
+	Layer          int    `json:"layer"`
+	DependenciesJSON string `json:"dependenciesJson,omitempty"` // JSON: []string
+}
 
 // Store defines the interface for persisting OPC Platform state.
 type Store interface {
@@ -59,6 +89,18 @@ type Store interface {
 	ListIssuesByProject(ctx context.Context, projectID string) ([]v1.IssueRecord, error)
 	UpdateIssue(ctx context.Context, issue v1.IssueRecord) error
 	DeleteIssue(ctx context.Context, id string) error
+
+	// Federated goal run operations.
+	SaveFederatedGoalRun(ctx context.Context, run FederatedGoalRunRecord) error
+	GetFederatedGoalRun(ctx context.Context, goalID string) (FederatedGoalRunRecord, error)
+	UpdateFederatedGoalRunStatus(ctx context.Context, goalID string, status string) error
+	ListActiveFederatedGoalRuns(ctx context.Context) ([]FederatedGoalRunRecord, error)
+	DeleteFederatedGoalRun(ctx context.Context, goalID string) error
+
+	// Federated goal project operations.
+	SaveFederatedGoalProject(ctx context.Context, proj FederatedGoalProjectRecord) error
+	UpdateFederatedGoalProject(ctx context.Context, proj FederatedGoalProjectRecord) error
+	ListFederatedGoalProjects(ctx context.Context, goalID string) ([]FederatedGoalProjectRecord, error)
 
 	// Close releases all resources.
 	Close() error

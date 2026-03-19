@@ -155,6 +155,44 @@ func (s *sqliteStore) migrate() error {
 		}
 	}
 
+	// Federated goal runs table (v0.7).
+	federatedTables := []string{
+		`CREATE TABLE IF NOT EXISTS federated_goal_runs (
+			goal_id       TEXT PRIMARY KEY,
+			goal_name     TEXT NOT NULL,
+			description   TEXT NOT NULL DEFAULT '',
+			callback_url  TEXT NOT NULL DEFAULT '',
+			status        TEXT NOT NULL DEFAULT 'InProgress',
+			trace_context TEXT NOT NULL DEFAULT '',
+			results_json  TEXT NOT NULL DEFAULT '{}',
+			created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE TABLE IF NOT EXISTS federated_goal_projects (
+			goal_id           TEXT NOT NULL,
+			project_id        TEXT NOT NULL,
+			project_name      TEXT NOT NULL,
+			company_id        TEXT NOT NULL DEFAULT '',
+			agent_name        TEXT NOT NULL DEFAULT '',
+			description       TEXT NOT NULL DEFAULT '',
+			status            TEXT NOT NULL DEFAULT 'Pending',
+			result            TEXT NOT NULL DEFAULT '',
+			round             INTEGER NOT NULL DEFAULT 0,
+			max_rounds        INTEGER NOT NULL DEFAULT 3,
+			layer             INTEGER NOT NULL DEFAULT 0,
+			dependencies_json TEXT NOT NULL DEFAULT '[]',
+			PRIMARY KEY (goal_id, project_name),
+			FOREIGN KEY (goal_id) REFERENCES federated_goal_runs(goal_id) ON DELETE CASCADE
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_fgp_goal ON federated_goal_projects(goal_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_fgr_status ON federated_goal_runs(status)`,
+	}
+	for _, m := range federatedTables {
+		if _, err := s.db.Exec(m); err != nil {
+			return fmt.Errorf("exec federated table migration: %w", err)
+		}
+	}
+
 	// Issue table: add traceability columns.
 	issueAlterMigrations := []string{
 		"ALTER TABLE issues ADD COLUMN goal_id TEXT NOT NULL DEFAULT ''",
@@ -756,4 +794,124 @@ func (s *sqliteStore) UpdateIssue(ctx context.Context, i v1.IssueRecord) error {
 func (s *sqliteStore) DeleteIssue(ctx context.Context, id string) error {
 	_, err := s.db.ExecContext(ctx, "DELETE FROM issues WHERE id = ?", id)
 	return err
+}
+
+// ---- Federated Goal Run operations ----
+
+func (s *sqliteStore) SaveFederatedGoalRun(ctx context.Context, run storage.FederatedGoalRunRecord) error {
+	now := time.Now()
+	_, err := s.db.ExecContext(ctx,
+		`INSERT OR REPLACE INTO federated_goal_runs
+		 (goal_id, goal_name, description, callback_url, status, trace_context, results_json, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		run.GoalID, run.GoalName, run.Description, run.CallbackURL,
+		run.Status, run.TraceContext, run.ResultsJSON, now, now,
+	)
+	if err != nil {
+		return fmt.Errorf("save federated goal run %q: %w", run.GoalID, err)
+	}
+	return nil
+}
+
+func (s *sqliteStore) GetFederatedGoalRun(ctx context.Context, goalID string) (storage.FederatedGoalRunRecord, error) {
+	var r storage.FederatedGoalRunRecord
+	err := s.db.QueryRowContext(ctx,
+		`SELECT goal_id, goal_name, description, callback_url, status, trace_context, results_json, created_at, updated_at
+		 FROM federated_goal_runs WHERE goal_id = ?`, goalID,
+	).Scan(&r.GoalID, &r.GoalName, &r.Description, &r.CallbackURL,
+		&r.Status, &r.TraceContext, &r.ResultsJSON, &r.CreatedAt, &r.UpdatedAt)
+	if err != nil {
+		return r, fmt.Errorf("get federated goal run %q: %w", goalID, err)
+	}
+	return r, nil
+}
+
+func (s *sqliteStore) UpdateFederatedGoalRunStatus(ctx context.Context, goalID string, status string) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE federated_goal_runs SET status=?, updated_at=? WHERE goal_id=?`,
+		status, time.Now(), goalID,
+	)
+	if err != nil {
+		return fmt.Errorf("update federated goal run status %q: %w", goalID, err)
+	}
+	return nil
+}
+
+func (s *sqliteStore) ListActiveFederatedGoalRuns(ctx context.Context) ([]storage.FederatedGoalRunRecord, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT goal_id, goal_name, description, callback_url, status, trace_context, results_json, created_at, updated_at
+		 FROM federated_goal_runs WHERE status NOT IN ('Completed', 'Failed') ORDER BY created_at`)
+	if err != nil {
+		return nil, fmt.Errorf("list active federated goal runs: %w", err)
+	}
+	defer rows.Close()
+
+	var runs []storage.FederatedGoalRunRecord
+	for rows.Next() {
+		var r storage.FederatedGoalRunRecord
+		if err := rows.Scan(&r.GoalID, &r.GoalName, &r.Description, &r.CallbackURL,
+			&r.Status, &r.TraceContext, &r.ResultsJSON, &r.CreatedAt, &r.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("scan federated goal run: %w", err)
+		}
+		runs = append(runs, r)
+	}
+	return runs, rows.Err()
+}
+
+func (s *sqliteStore) DeleteFederatedGoalRun(ctx context.Context, goalID string) error {
+	_, err := s.db.ExecContext(ctx, "DELETE FROM federated_goal_runs WHERE goal_id = ?", goalID)
+	return err
+}
+
+// ---- Federated Goal Project operations ----
+
+func (s *sqliteStore) SaveFederatedGoalProject(ctx context.Context, proj storage.FederatedGoalProjectRecord) error {
+	_, err := s.db.ExecContext(ctx,
+		`INSERT OR REPLACE INTO federated_goal_projects
+		 (goal_id, project_id, project_name, company_id, agent_name, description, status, result, round, max_rounds, layer, dependencies_json)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		proj.GoalID, proj.ProjectID, proj.ProjectName, proj.CompanyID,
+		proj.AgentName, proj.Description, proj.Status, proj.Result,
+		proj.Round, proj.MaxRounds, proj.Layer, proj.DependenciesJSON,
+	)
+	if err != nil {
+		return fmt.Errorf("save federated goal project %q/%q: %w", proj.GoalID, proj.ProjectName, err)
+	}
+	return nil
+}
+
+func (s *sqliteStore) UpdateFederatedGoalProject(ctx context.Context, proj storage.FederatedGoalProjectRecord) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE federated_goal_projects SET status=?, result=?, round=?, agent_name=?
+		 WHERE goal_id=? AND project_name=?`,
+		proj.Status, proj.Result, proj.Round, proj.AgentName,
+		proj.GoalID, proj.ProjectName,
+	)
+	if err != nil {
+		return fmt.Errorf("update federated goal project %q/%q: %w", proj.GoalID, proj.ProjectName, err)
+	}
+	return nil
+}
+
+func (s *sqliteStore) ListFederatedGoalProjects(ctx context.Context, goalID string) ([]storage.FederatedGoalProjectRecord, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT goal_id, project_id, project_name, company_id, agent_name, description, status, result, round, max_rounds, layer, dependencies_json
+		 FROM federated_goal_projects WHERE goal_id = ? ORDER BY layer, project_name`, goalID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list federated goal projects %q: %w", goalID, err)
+	}
+	defer rows.Close()
+
+	var projects []storage.FederatedGoalProjectRecord
+	for rows.Next() {
+		var p storage.FederatedGoalProjectRecord
+		if err := rows.Scan(&p.GoalID, &p.ProjectID, &p.ProjectName, &p.CompanyID,
+			&p.AgentName, &p.Description, &p.Status, &p.Result,
+			&p.Round, &p.MaxRounds, &p.Layer, &p.DependenciesJSON); err != nil {
+			return nil, fmt.Errorf("scan federated goal project: %w", err)
+		}
+		projects = append(projects, p)
+	}
+	return projects, rows.Err()
 }
