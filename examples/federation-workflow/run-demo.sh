@@ -25,16 +25,16 @@ err()  { echo -e "${RED}[OPC]${NC} $*"; }
 # ─── stop ────────────────────────────────────────────────────────────────────
 stop_all() {
     log "停止所有 OPC 实例和 Dashboard..."
-    for port in 9527 9528 9529 9530 3000 3001 3002 3003; do
+    for port in 9527 9528 9529 9530 4000 4001 4002 4003; do
         pid=$(lsof -ti :"${port}" 2>/dev/null || true)
         if [ -n "$pid" ]; then
             kill "$pid" 2>/dev/null && log "  :${port} 已停止 (PID ${pid})" || true
         fi
     done
     pkill -f "opctl serve" 2>/dev/null || true
-    # Kill dashboard on port 3000
-    pid_3000=$(lsof -ti :3000 2>/dev/null || true)
-    [ -n "$pid_3000" ] && kill "$pid_3000" 2>/dev/null || true
+    # Kill dashboard on port 4000
+    pid_4000=$(lsof -ti :4000 2>/dev/null || true)
+    [ -n "$pid_4000" ] && kill "$pid_4000" 2>/dev/null || true
     sleep 1
     log "全部停止"
 }
@@ -138,9 +138,9 @@ if [ -f "$STANDALONE_SERVER" ]; then
     # Copy static assets to standalone (required by standalone mode)
     cp -r "${DASHBOARD_DIR}/.next/static" "${DASHBOARD_DIR}/.next/standalone/.next/static" 2>/dev/null || true
     cp -r "${DASHBOARD_DIR}/public" "${DASHBOARD_DIR}/.next/standalone/public" 2>/dev/null || true
-    PORT=3000 HOSTNAME=0.0.0.0 node "$STANDALONE_SERVER" \
+    PORT=4000 HOSTNAME=0.0.0.0 node "$STANDALONE_SERVER" \
         > "${BASE_DIR}/master/dashboard.log" 2>&1 &
-    log "  Dashboard → :3000（Federation 页面可查看所有节点）"
+    log "  Dashboard → :4000（Federation 页面可查看所有节点）"
     sleep 2
 else
     warn "Dashboard standalone 未构建，跳过（cd dashboard && npm run build）"
@@ -242,8 +242,8 @@ log "  │ Frontend    │ http://localhost:9529/api       │"
 log "  │ Backend     │ http://localhost:9530/api       │"
 log "  └─────────────┴────────────────────────────────┘"
 echo ""
-log "  Dashboard:     http://localhost:3000"
-log "  联邦聚合视图:  http://localhost:3000/federation"
+log "  Dashboard:     http://localhost:4000"
+log "  联邦聚合视图:  http://localhost:4000/federation"
 log "  Jaeger UI:     http://localhost:16686"
 echo ""
 log "  Federation 页面里展开 Company 卡片即可查看各节点的 Agents / Tasks / Metrics"
