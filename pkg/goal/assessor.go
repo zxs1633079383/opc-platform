@@ -16,11 +16,36 @@ const (
 	maxRoundsDefault  = 3
 )
 
+// ResultCategory classifies the type of non-satisfactory result for differentiated retry strategies (v0.7).
+type ResultCategory string
+
+const (
+	CategorySatisfied      ResultCategory = "satisfied"       // Result is good.
+	CategoryEmptyResult    ResultCategory = "empty_result"    // Agent produced no output.
+	CategoryExecutionError ResultCategory = "execution_error" // Agent encountered an error during execution.
+	CategoryQualityIssue   ResultCategory = "quality_issue"   // Output exists but doesn't meet requirements.
+)
+
+// MaxRetries returns the max retry count for this category.
+func (c ResultCategory) MaxRetries() int {
+	switch c {
+	case CategoryEmptyResult:
+		return 1 // Empty results get 1 retry max (not 3).
+	case CategoryExecutionError:
+		return 2
+	case CategoryQualityIssue:
+		return 3 // Full A2A review cycle.
+	default:
+		return 0
+	}
+}
+
 // AssessmentResult is the LLM's judgment on whether a task result satisfies the requirement.
 type AssessmentResult struct {
-	Satisfied bool   `json:"satisfied"`
-	Reason    string `json:"reason"`
-	FollowUp  string `json:"followUp,omitempty"` // instruction to send if not satisfied
+	Satisfied bool           `json:"satisfied"`
+	Reason    string         `json:"reason"`
+	FollowUp  string        `json:"followUp,omitempty"` // instruction to send if not satisfied
+	Category  ResultCategory `json:"category,omitempty"` // v0.7: classification for smart retry
 }
 
 // GoalDriver assesses task results and generates follow-up instructions
@@ -42,10 +67,29 @@ func NewGoalDriver(ctrl AgentController, logger *zap.SugaredLogger) *GoalDriver 
 // Returns an assessment with follow-up instructions if not satisfied.
 func (gd *GoalDriver) AssessResult(ctx context.Context, goalName, projectDesc, result string) (*AssessmentResult, error) {
 	if result == "" {
+		// Check if the task is a verification/check type that legitimately produces no output.
+		if isVerificationTask(projectDesc) {
+			return &AssessmentResult{
+				Satisfied: true,
+				Reason:    "empty result accepted — task appears to be a verification/check that requires no output",
+				Category:  CategorySatisfied,
+			}, nil
+		}
 		return &AssessmentResult{
 			Satisfied: false,
 			Reason:    "result is empty — agent produced no output",
 			FollowUp:  fmt.Sprintf("上次执行没有产出任何结果。请直接完成以下任务，不要等待用户确认或交互：\n\n%s", projectDesc),
+			Category:  CategoryEmptyResult,
+		}, nil
+	}
+
+	// Check if result contains error indicators.
+	if isExecutionError(result) {
+		return &AssessmentResult{
+			Satisfied: false,
+			Reason:    "result contains execution error",
+			FollowUp:  fmt.Sprintf("上次执行遇到错误。请修复错误后重新完成任务：\n\n%s\n\n错误信息：%s", projectDesc, truncateStr(result, 500)),
+			Category:  CategoryExecutionError,
 		}, nil
 	}
 
@@ -55,6 +99,7 @@ func (gd *GoalDriver) AssessResult(ctx context.Context, goalName, projectDesc, r
 			Satisfied: false,
 			Reason:    "result contains interactive prompt — agent is waiting for user input instead of completing the task",
 			FollowUp:  fmt.Sprintf("上次执行中你在等待用户交互输入。请不要等待用户确认，直接自主完成任务。\n\n任务要求：%s\n\n上次输出（供参考）：%s", projectDesc, truncateStr(result, 500)),
+			Category:  CategoryQualityIssue,
 		}, nil
 	}
 
@@ -63,8 +108,14 @@ func (gd *GoalDriver) AssessResult(ctx context.Context, goalName, projectDesc, r
 	if err != nil {
 		gd.logger.Warnw("LLM assessment failed, falling back to accept",
 			"error", err)
-		// Fallback: accept the result if LLM assessment fails.
-		return &AssessmentResult{Satisfied: true, Reason: "LLM assessment unavailable, accepted by default"}, nil
+		return &AssessmentResult{Satisfied: true, Reason: "LLM assessment unavailable, accepted by default", Category: CategorySatisfied}, nil
+	}
+
+	// Set category based on LLM assessment.
+	if assessment.Satisfied {
+		assessment.Category = CategorySatisfied
+	} else if assessment.Category == "" {
+		assessment.Category = CategoryQualityIssue
 	}
 
 	return assessment, nil
@@ -190,6 +241,38 @@ func isInteractivePrompt(result string) bool {
 		"是否继续",
 		"你想试试",
 		"requires opening a local url",
+	}
+	for _, p := range patterns {
+		if strings.Contains(lower, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// isVerificationTask detects tasks that are checks/verifications where empty output is acceptable.
+func isVerificationTask(desc string) bool {
+	lower := strings.ToLower(desc)
+	patterns := []string{
+		"检查", "验证", "check", "verify", "validate", "confirm",
+		"test", "测试", "审查", "review", "scan", "扫描", "lint",
+	}
+	for _, p := range patterns {
+		if strings.Contains(lower, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// isExecutionError detects error indicators in agent output.
+func isExecutionError(result string) bool {
+	lower := strings.ToLower(result)
+	patterns := []string{
+		"error:", "fatal:", "panic:", "traceback",
+		"exception:", "failed to", "command failed",
+		"permission denied", "not found",
+		"segmentation fault", "out of memory",
 	}
 	for _, p := range patterns {
 		if strings.Contains(lower, p) {
