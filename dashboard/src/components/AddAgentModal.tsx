@@ -13,6 +13,7 @@ interface AddAgentModalProps {
 
 interface AgentFormData {
   readonly name: string
+  readonly description: string
   readonly type: string
   readonly modelName: string
   readonly workdir: string
@@ -30,6 +31,9 @@ interface ModelInfo {
   readonly displayName: string
   readonly inputPer1K: number
   readonly outputPer1K: number
+  readonly contextWindow: string
+  readonly maxOutput: string
+  readonly reasoning: boolean
   readonly description: string
   readonly recommended?: boolean
 }
@@ -46,9 +50,10 @@ const MODEL_CATALOG: Record<string, readonly ProviderInfo[]> = {
       provider: 'anthropic',
       displayName: 'Anthropic',
       models: [
-        { name: 'claude-sonnet-4', displayName: 'Claude Sonnet 4', inputPer1K: 0.003, outputPer1K: 0.015, description: 'Best coding model, fast', recommended: true },
-        { name: 'claude-opus-4', displayName: 'Claude Opus 4', inputPer1K: 0.015, outputPer1K: 0.075, description: 'Deepest reasoning, complex tasks' },
-        { name: 'claude-haiku-4-5-20251001', displayName: 'Claude Haiku 4.5', inputPer1K: 0.0008, outputPer1K: 0.004, description: 'Fast and cheap, simple tasks' },
+        { name: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6', inputPer1K: 0.003, outputPer1K: 0.015, contextWindow: '200K', maxOutput: '16K', reasoning: true, description: 'Best coding model', recommended: true },
+        { name: 'claude-opus-4-6', displayName: 'Claude Opus 4.6', inputPer1K: 0.015, outputPer1K: 0.075, contextWindow: '200K', maxOutput: '32K', reasoning: true, description: 'Deepest reasoning, complex tasks' },
+        { name: 'claude-haiku-4-5-20251001', displayName: 'Claude Haiku 4.5', inputPer1K: 0.0008, outputPer1K: 0.004, contextWindow: '200K', maxOutput: '8K', reasoning: false, description: 'Fast and cheap, simple tasks' },
+        { name: 'claude-sonnet-4-5-20250514', displayName: 'Claude Sonnet 4.5', inputPer1K: 0.003, outputPer1K: 0.015, contextWindow: '200K', maxOutput: '16K', reasoning: true, description: 'Previous gen, stable' },
       ],
     },
   ],
@@ -57,25 +62,17 @@ const MODEL_CATALOG: Record<string, readonly ProviderInfo[]> = {
       provider: 'anthropic',
       displayName: 'Anthropic',
       models: [
-        { name: 'claude-sonnet-4', displayName: 'Claude Sonnet 4', inputPer1K: 0.003, outputPer1K: 0.015, description: 'Best balance of speed & quality', recommended: true },
-        { name: 'claude-opus-4', displayName: 'Claude Opus 4', inputPer1K: 0.015, outputPer1K: 0.075, description: 'Maximum reasoning' },
-        { name: 'claude-haiku-4-5-20251001', displayName: 'Claude Haiku 4.5', inputPer1K: 0.0008, outputPer1K: 0.004, description: 'Fast worker agent' },
+        { name: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6', inputPer1K: 0.003, outputPer1K: 0.015, contextWindow: '200K', maxOutput: '16K', reasoning: true, description: 'Best balance of speed & quality', recommended: true },
+        { name: 'claude-opus-4-6', displayName: 'Claude Opus 4.6', inputPer1K: 0.015, outputPer1K: 0.075, contextWindow: '200K', maxOutput: '32K', reasoning: true, description: 'Maximum reasoning' },
+        { name: 'claude-haiku-4-5-20251001', displayName: 'Claude Haiku 4.5', inputPer1K: 0.0008, outputPer1K: 0.004, contextWindow: '200K', maxOutput: '8K', reasoning: false, description: 'Fast worker agent' },
       ],
     },
     {
       provider: 'openai',
       displayName: 'OpenAI',
       models: [
-        { name: 'gpt-4o', displayName: 'GPT-4o', inputPer1K: 0.0025, outputPer1K: 0.01, description: 'Multimodal flagship' },
-        { name: 'gpt-4o-mini', displayName: 'GPT-4o Mini', inputPer1K: 0.00015, outputPer1K: 0.0006, description: 'Fast and affordable' },
-      ],
-    },
-    {
-      provider: 'deepseek',
-      displayName: 'DeepSeek',
-      models: [
-        { name: 'deepseek-v3', displayName: 'DeepSeek V3', inputPer1K: 0.00027, outputPer1K: 0.0011, description: 'Cost-effective coding' },
-        { name: 'deepseek-r1', displayName: 'DeepSeek R1', inputPer1K: 0.00055, outputPer1K: 0.0022, description: 'Reasoning model' },
+        { name: 'gpt-4o', displayName: 'GPT-4o', inputPer1K: 0.0025, outputPer1K: 0.01, contextWindow: '128K', maxOutput: '16K', reasoning: false, description: 'Multimodal flagship' },
+        { name: 'gpt-4o-mini', displayName: 'GPT-4o Mini', inputPer1K: 0.00015, outputPer1K: 0.0006, contextWindow: '128K', maxOutput: '16K', reasoning: false, description: 'Fast and affordable' },
       ],
     },
   ],
@@ -84,9 +81,11 @@ const MODEL_CATALOG: Record<string, readonly ProviderInfo[]> = {
       provider: 'openai',
       displayName: 'OpenAI',
       models: [
-        { name: 'o4-mini', displayName: 'O4 Mini', inputPer1K: 0.0011, outputPer1K: 0.0044, description: 'Default Codex model', recommended: true },
-        { name: 'o3', displayName: 'O3', inputPer1K: 0.01, outputPer1K: 0.04, description: 'Advanced reasoning' },
-        { name: 'o3-mini', displayName: 'O3 Mini', inputPer1K: 0.0011, outputPer1K: 0.0044, description: 'Lightweight reasoning' },
+        { name: 'o4-mini', displayName: 'O4 Mini', inputPer1K: 0.0011, outputPer1K: 0.0044, contextWindow: '200K', maxOutput: '100K', reasoning: true, description: 'Default Codex model', recommended: true },
+        { name: 'o3', displayName: 'O3', inputPer1K: 0.01, outputPer1K: 0.04, contextWindow: '200K', maxOutput: '100K', reasoning: true, description: 'Advanced reasoning' },
+        { name: 'gpt-4o', displayName: 'GPT-4o', inputPer1K: 0.0025, outputPer1K: 0.01, contextWindow: '128K', maxOutput: '16K', reasoning: false, description: 'Multimodal, no reasoning' },
+        { name: 'gpt-4o-mini', displayName: 'GPT-4o Mini', inputPer1K: 0.00015, outputPer1K: 0.0006, contextWindow: '128K', maxOutput: '16K', reasoning: false, description: 'Cheapest option' },
+        { name: 'o3-mini', displayName: 'O3 Mini', inputPer1K: 0.0011, outputPer1K: 0.0044, contextWindow: '200K', maxOutput: '100K', reasoning: true, description: 'Lightweight reasoning' },
       ],
     },
   ],
@@ -95,11 +94,10 @@ const MODEL_CATALOG: Record<string, readonly ProviderInfo[]> = {
       provider: 'openai',
       displayName: 'OpenAI',
       models: [
-        { name: 'gpt-4o', displayName: 'GPT-4o', inputPer1K: 0.0025, outputPer1K: 0.01, description: 'Flagship multimodal', recommended: true },
-        { name: 'gpt-4o-mini', displayName: 'GPT-4o Mini', inputPer1K: 0.00015, outputPer1K: 0.0006, description: 'Fast and cheap' },
-        { name: 'o4-mini', displayName: 'O4 Mini', inputPer1K: 0.0011, outputPer1K: 0.0044, description: 'Reasoning model' },
-        { name: 'o3', displayName: 'O3', inputPer1K: 0.01, outputPer1K: 0.04, description: 'Advanced reasoning' },
-        { name: 'o1', displayName: 'O1', inputPer1K: 0.015, outputPer1K: 0.06, description: 'Deep reasoning' },
+        { name: 'gpt-4o', displayName: 'GPT-4o', inputPer1K: 0.0025, outputPer1K: 0.01, contextWindow: '128K', maxOutput: '16K', reasoning: false, description: 'Flagship multimodal', recommended: true },
+        { name: 'gpt-4o-mini', displayName: 'GPT-4o Mini', inputPer1K: 0.00015, outputPer1K: 0.0006, contextWindow: '128K', maxOutput: '16K', reasoning: false, description: 'Fast and cheap' },
+        { name: 'o4-mini', displayName: 'O4 Mini', inputPer1K: 0.0011, outputPer1K: 0.0044, contextWindow: '200K', maxOutput: '100K', reasoning: true, description: 'Reasoning model' },
+        { name: 'o3', displayName: 'O3', inputPer1K: 0.01, outputPer1K: 0.04, contextWindow: '200K', maxOutput: '100K', reasoning: true, description: 'Advanced reasoning' },
       ],
     },
   ],
@@ -108,33 +106,16 @@ const MODEL_CATALOG: Record<string, readonly ProviderInfo[]> = {
       provider: 'anthropic',
       displayName: 'Anthropic',
       models: [
-        { name: 'claude-sonnet-4', displayName: 'Claude Sonnet 4', inputPer1K: 0.003, outputPer1K: 0.015, description: 'Best coding model' },
-        { name: 'claude-opus-4', displayName: 'Claude Opus 4', inputPer1K: 0.015, outputPer1K: 0.075, description: 'Deepest reasoning' },
-        { name: 'claude-haiku-4-5-20251001', displayName: 'Claude Haiku 4.5', inputPer1K: 0.0008, outputPer1K: 0.004, description: 'Fast worker' },
+        { name: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6', inputPer1K: 0.003, outputPer1K: 0.015, contextWindow: '200K', maxOutput: '16K', reasoning: true, description: 'Best coding model' },
+        { name: 'claude-opus-4-6', displayName: 'Claude Opus 4.6', inputPer1K: 0.015, outputPer1K: 0.075, contextWindow: '200K', maxOutput: '32K', reasoning: true, description: 'Deepest reasoning' },
       ],
     },
     {
       provider: 'openai',
       displayName: 'OpenAI',
       models: [
-        { name: 'gpt-4o', displayName: 'GPT-4o', inputPer1K: 0.0025, outputPer1K: 0.01, description: 'Multimodal flagship' },
-        { name: 'gpt-4o-mini', displayName: 'GPT-4o Mini', inputPer1K: 0.00015, outputPer1K: 0.0006, description: 'Fast and affordable' },
-      ],
-    },
-    {
-      provider: 'google',
-      displayName: 'Google',
-      models: [
-        { name: 'gemini-2.5-pro', displayName: 'Gemini 2.5 Pro', inputPer1K: 0.00125, outputPer1K: 0.01, description: 'Advanced reasoning' },
-        { name: 'gemini-2.5-flash', displayName: 'Gemini 2.5 Flash', inputPer1K: 0.00015, outputPer1K: 0.0006, description: 'Fast and efficient' },
-      ],
-    },
-    {
-      provider: 'deepseek',
-      displayName: 'DeepSeek',
-      models: [
-        { name: 'deepseek-v3', displayName: 'DeepSeek V3', inputPer1K: 0.00027, outputPer1K: 0.0011, description: 'Cost-effective coding' },
-        { name: 'deepseek-r1', displayName: 'DeepSeek R1', inputPer1K: 0.00055, outputPer1K: 0.0022, description: 'Reasoning model' },
+        { name: 'gpt-4o', displayName: 'GPT-4o', inputPer1K: 0.0025, outputPer1K: 0.01, contextWindow: '128K', maxOutput: '16K', reasoning: false, description: 'Multimodal flagship' },
+        { name: 'o4-mini', displayName: 'O4 Mini', inputPer1K: 0.0011, outputPer1K: 0.0044, contextWindow: '200K', maxOutput: '100K', reasoning: true, description: 'Reasoning model' },
       ],
     },
   ],
@@ -150,8 +131,9 @@ const AGENT_TYPES = [
 
 const INITIAL_FORM: AgentFormData = {
   name: '',
+  description: '',
   type: 'claude-code',
-  modelName: 'claude-sonnet-4',
+  modelName: 'claude-sonnet-4-6',
   workdir: '/workspace/my-project',
   maxTokens: 16384,
   costLimitPerTask: '$2',
@@ -175,8 +157,9 @@ function formatPrice(price: number): string {
 }
 
 function buildYaml(form: AgentFormData): string {
+  const descLine = form.description ? `\n  description: "${form.description}"` : ''
+
   if (form.type === 'openclaw') {
-    // OpenClaw: connect to existing gateway, no model selection needed.
     const tokenLine = form.gatewayToken
       ? `\n  env:\n    OPENCLAW_GATEWAY_TOKEN: "${form.gatewayToken}"`
       : ''
@@ -187,7 +170,7 @@ metadata:
   labels:
     role: agent
 spec:
-  type: openclaw
+  type: openclaw${descLine}
   runtime:
     timeout:
       task: "600s"
@@ -213,7 +196,7 @@ metadata:
   labels:
     role: agent
 spec:
-  type: ${form.type}
+  type: ${form.type}${descLine}
   runtime:
     model:
       provider: ${provider}
@@ -355,6 +338,20 @@ export function AddAgentModal({ isOpen, onClose }: AddAgentModalProps) {
             />
           </div>
 
+          {/* Description */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              {t('addAgent.description')}
+            </label>
+            <input
+              type="text"
+              value={form.description}
+              onChange={(e) => updateField('description', e.target.value)}
+              placeholder={t('addAgent.descriptionPlaceholder')}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm"
+            />
+          </div>
+
           {/* Agent Type - card selector */}
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -438,13 +435,13 @@ export function AddAgentModal({ isOpen, onClose }: AddAgentModalProps) {
                             key={model.name}
                             type="button"
                             onClick={() => updateField('modelName', model.name)}
-                            className={`w-full p-2.5 rounded-lg border text-left transition-all flex items-center justify-between ${
+                            className={`w-full p-2.5 rounded-lg border text-left transition-all ${
                               form.modelName === model.name
                                 ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20 ring-1 ring-primary-500'
                                 : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
                             }`}
                           >
-                            <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between">
                               <div className="flex items-center gap-2">
                                 <span className="text-sm font-medium text-gray-900 dark:text-white">
                                   {model.displayName}
@@ -454,16 +451,23 @@ export function AddAgentModal({ isOpen, onClose }: AddAgentModalProps) {
                                     {t('addAgent.recommended')}
                                   </span>
                                 )}
+                                {model.reasoning && (
+                                  <span className="px-1.5 py-0.5 text-[10px] font-medium bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400 rounded">
+                                    Reasoning
+                                  </span>
+                                )}
                               </div>
-                              <div className="text-xs text-gray-500 dark:text-gray-400">{model.description}</div>
+                              <div className="text-right shrink-0 ml-3">
+                                <div className="text-xs text-gray-500 dark:text-gray-400">
+                                  ↑ {formatPrice(model.inputPer1K)} · ↓ {formatPrice(model.outputPer1K)}
+                                </div>
+                              </div>
                             </div>
-                            <div className="text-right shrink-0 ml-3">
-                              <div className="text-xs text-gray-500 dark:text-gray-400">
-                                ↑ {formatPrice(model.inputPer1K)}
-                              </div>
-                              <div className="text-xs text-gray-500 dark:text-gray-400">
-                                ↓ {formatPrice(model.outputPer1K)}
-                              </div>
+                            <div className="flex items-center gap-3 mt-1">
+                              <span className="text-xs text-gray-500 dark:text-gray-400">{model.description}</span>
+                              <span className="text-[10px] text-gray-400 dark:text-gray-500">
+                                {model.contextWindow} ctx · {model.maxOutput} out
+                              </span>
                             </div>
                           </button>
                         ))}
@@ -477,9 +481,16 @@ export function AddAgentModal({ isOpen, onClose }: AddAgentModalProps) {
               {selectedModel && (
                 <div className="flex items-start gap-2 p-3 bg-blue-50 dark:bg-blue-900/10 rounded-lg border border-blue-200 dark:border-blue-800">
                   <Info className="w-4 h-4 text-blue-500 shrink-0 mt-0.5" />
-                  <div className="text-xs text-blue-700 dark:text-blue-300">
-                    <span className="font-medium">{selectedModel.displayName}</span>: Input {formatPrice(selectedModel.inputPer1K)} · Output {formatPrice(selectedModel.outputPer1K)}
-                    {' '}· Est. ~${((selectedModel.inputPer1K * 10 + selectedModel.outputPer1K * 2)).toFixed(3)}/task (10K in + 2K out)
+                  <div className="text-xs text-blue-700 dark:text-blue-300 space-y-0.5">
+                    <div>
+                      <span className="font-medium">{selectedModel.displayName}</span>
+                      {' '}— {selectedModel.contextWindow} context · {selectedModel.maxOutput} max output
+                      {selectedModel.reasoning && ' · Reasoning'}
+                    </div>
+                    <div>
+                      Input {formatPrice(selectedModel.inputPer1K)} · Output {formatPrice(selectedModel.outputPer1K)}
+                      {' '}· Est. ~${((selectedModel.inputPer1K * 10 + selectedModel.outputPer1K * 2)).toFixed(3)}/task (10K in + 2K out)
+                    </div>
                   </div>
                 </div>
               )}

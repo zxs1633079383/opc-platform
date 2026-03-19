@@ -104,10 +104,22 @@ func (a *Adapter) Health() v1.HealthStatus {
 
 // claudeModelMap maps short model names to Claude CLI-compatible model IDs.
 var claudeModelMap = map[string]string{
-	"claude-sonnet-4":   "claude-sonnet-4-20250514",
-	"claude-opus-4":     "claude-opus-4-20250514",
-	"claude-haiku-4":    "claude-haiku-4-5-20251001",
+	// Current generation (4.6)
+	"claude-opus-4-6":   "claude-opus-4-6",
+	"claude-opus-4.6":   "claude-opus-4-6",
+	"claude-sonnet-4-6": "claude-sonnet-4-6",
+	"claude-sonnet-4.6": "claude-sonnet-4-6",
+	// Previous generation (4.5)
+	"claude-opus-4-5":   "claude-opus-4-5-20250514",
+	"claude-opus-4.5":   "claude-opus-4-5-20250514",
+	"claude-sonnet-4-5": "claude-sonnet-4-5-20250514",
+	"claude-sonnet-4.5": "claude-sonnet-4-5-20250514",
+	"claude-haiku-4-5":  "claude-haiku-4-5-20251001",
 	"claude-haiku-4.5":  "claude-haiku-4-5-20251001",
+	// Legacy aliases
+	"claude-sonnet-4":   "claude-sonnet-4-6",
+	"claude-opus-4":     "claude-opus-4-6",
+	"claude-haiku-4":    "claude-haiku-4-5-20251001",
 }
 
 // buildBaseArgs constructs the common CLI arguments from the agent spec.

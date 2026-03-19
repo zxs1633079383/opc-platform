@@ -39,6 +39,8 @@ export const zh: Record<string, string> = {
   // Add Agent Modal
   'addAgent.title': '添加智能体',
   'addAgent.name': '智能体名称',
+  'addAgent.description': '描述',
+  'addAgent.descriptionPlaceholder': '例如：设计登录页面，输出高保真设计稿和交互标注',
   'addAgent.type': '智能体类型',
   'addAgent.model': '模型',
   'addAgent.workdir': '工作目录',

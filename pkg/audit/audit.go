@@ -58,6 +58,7 @@ type AuditEvent struct {
 	ProjectRef string `json:"projectRef,omitempty"`
 	TaskRef    string `json:"taskRef,omitempty"`
 	AgentRef   string `json:"agentRef,omitempty"`
+	IssueRef   string `json:"issueRef,omitempty"`
 }
 
 // Logger records and queries audit events.
@@ -193,6 +194,9 @@ func (l *Logger) Trace(resourceType ResourceType, resourceName string) ([]AuditE
 		if e.AgentRef != "" {
 			related[resourceKey{ResourceAgent, e.AgentRef}] = struct{}{}
 		}
+		if e.IssueRef != "" {
+			related[resourceKey{ResourceIssue, e.IssueRef}] = struct{}{}
+		}
 	}
 
 	// Also scan all events that reference this resource through their ref fields.
@@ -207,6 +211,8 @@ func (l *Logger) Trace(resourceType ResourceType, resourceName string) ([]AuditE
 			matched = e.TaskRef == resourceName
 		case ResourceAgent:
 			matched = e.AgentRef == resourceName
+		case ResourceIssue:
+			matched = e.IssueRef == resourceName
 		}
 		if matched {
 			related[resourceKey{e.ResourceType, e.ResourceName}] = struct{}{}

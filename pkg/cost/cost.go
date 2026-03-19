@@ -40,10 +40,12 @@ type CostEvent struct {
 
 // ModelPricing contains per-token pricing for a model.
 type ModelPricing struct {
-	Provider   string  `json:"provider"`
-	Model      string  `json:"model"`
-	InputPer1K float64 `json:"inputPer1k"`
-	OutputPer1K float64 `json:"outputPer1k"`
+	Provider      string  `json:"provider"`
+	Model         string  `json:"model"`
+	InputPer1K    float64 `json:"inputPer1k"`
+	OutputPer1K   float64 `json:"outputPer1k"`
+	CacheReadPer1K  float64 `json:"cacheReadPer1k,omitempty"`
+	CacheWritePer1K float64 `json:"cacheWritePer1k,omitempty"`
 }
 
 // BudgetConfig defines budget limits.
@@ -94,29 +96,36 @@ func pricingKey(provider, model string) string {
 // Prices are per 1K tokens in USD (as of 2025-Q2).
 func defaultPricing() map[string]ModelPricing {
 	models := []ModelPricing{
-		// --- Anthropic Claude ---
+		// --- Anthropic Claude (current: 4.6) ---
+		{Provider: "anthropic", Model: "claude-opus-4-6", InputPer1K: 0.015, OutputPer1K: 0.075, CacheReadPer1K: 0.0015, CacheWritePer1K: 0.01875},
+		{Provider: "anthropic", Model: "claude-sonnet-4-6", InputPer1K: 0.003, OutputPer1K: 0.015, CacheReadPer1K: 0.0003, CacheWritePer1K: 0.00375},
+		// Anthropic Claude (previous: 4.5)
+		{Provider: "anthropic", Model: "claude-opus-4-5", InputPer1K: 0.015, OutputPer1K: 0.075, CacheReadPer1K: 0.0015, CacheWritePer1K: 0.01875},
+		{Provider: "anthropic", Model: "claude-opus-4-5-20250514", InputPer1K: 0.015, OutputPer1K: 0.075, CacheReadPer1K: 0.0015, CacheWritePer1K: 0.01875},
+		{Provider: "anthropic", Model: "claude-sonnet-4-5", InputPer1K: 0.003, OutputPer1K: 0.015, CacheReadPer1K: 0.0003, CacheWritePer1K: 0.00375},
+		{Provider: "anthropic", Model: "claude-sonnet-4-5-20250514", InputPer1K: 0.003, OutputPer1K: 0.015, CacheReadPer1K: 0.0003, CacheWritePer1K: 0.00375},
+		{Provider: "anthropic", Model: "claude-haiku-4-5", InputPer1K: 0.0008, OutputPer1K: 0.004, CacheReadPer1K: 0.00008, CacheWritePer1K: 0.001},
+		{Provider: "anthropic", Model: "claude-haiku-4-5-20251001", InputPer1K: 0.0008, OutputPer1K: 0.004, CacheReadPer1K: 0.00008, CacheWritePer1K: 0.001},
+		// Legacy aliases
 		{Provider: "anthropic", Model: "claude-opus-4", InputPer1K: 0.015, OutputPer1K: 0.075},
 		{Provider: "anthropic", Model: "claude-sonnet-4", InputPer1K: 0.003, OutputPer1K: 0.015},
 		{Provider: "anthropic", Model: "claude-haiku-4", InputPer1K: 0.0008, OutputPer1K: 0.004},
-		// Versioned variants
-		{Provider: "anthropic", Model: "claude-opus-4-20250514", InputPer1K: 0.015, OutputPer1K: 0.075},
-		{Provider: "anthropic", Model: "claude-sonnet-4-20250514", InputPer1K: 0.003, OutputPer1K: 0.015},
-		{Provider: "anthropic", Model: "claude-haiku-4-5-20251001", InputPer1K: 0.0008, OutputPer1K: 0.004},
-		// Legacy
 		{Provider: "anthropic", Model: "claude-3-5-sonnet-20241022", InputPer1K: 0.003, OutputPer1K: 0.015},
 		{Provider: "anthropic", Model: "claude-3-5-haiku-20241022", InputPer1K: 0.0008, OutputPer1K: 0.004},
 
 		// --- OpenAI ---
-		{Provider: "openai", Model: "gpt-4o", InputPer1K: 0.0025, OutputPer1K: 0.01},
-		{Provider: "openai", Model: "gpt-4o-mini", InputPer1K: 0.00015, OutputPer1K: 0.0006},
+		{Provider: "openai", Model: "o4-mini", InputPer1K: 0.0011, OutputPer1K: 0.0044, CacheReadPer1K: 0.000275},
+		{Provider: "openai", Model: "o3", InputPer1K: 0.01, OutputPer1K: 0.04, CacheReadPer1K: 0.0025},
+		{Provider: "openai", Model: "o3-mini", InputPer1K: 0.0011, OutputPer1K: 0.0044, CacheReadPer1K: 0.00055},
+		{Provider: "openai", Model: "gpt-4o", InputPer1K: 0.0025, OutputPer1K: 0.01, CacheReadPer1K: 0.00125},
+		{Provider: "openai", Model: "gpt-4o-mini", InputPer1K: 0.00015, OutputPer1K: 0.0006, CacheReadPer1K: 0.000075},
 		{Provider: "openai", Model: "gpt-4-turbo", InputPer1K: 0.01, OutputPer1K: 0.03},
-		{Provider: "openai", Model: "o4-mini", InputPer1K: 0.0011, OutputPer1K: 0.0044},
-		{Provider: "openai", Model: "o3", InputPer1K: 0.01, OutputPer1K: 0.04},
-		{Provider: "openai", Model: "o3-mini", InputPer1K: 0.0011, OutputPer1K: 0.0044},
 		{Provider: "openai", Model: "o1", InputPer1K: 0.015, OutputPer1K: 0.06},
 		{Provider: "openai", Model: "o1-mini", InputPer1K: 0.003, OutputPer1K: 0.012},
 
 		// --- OpenClaw (uses Anthropic models underneath) ---
+		{Provider: "openclaw", Model: "claude-opus-4-6", InputPer1K: 0.015, OutputPer1K: 0.075, CacheReadPer1K: 0.0015, CacheWritePer1K: 0.01875},
+		{Provider: "openclaw", Model: "claude-sonnet-4-6", InputPer1K: 0.003, OutputPer1K: 0.015, CacheReadPer1K: 0.0003, CacheWritePer1K: 0.00375},
 		{Provider: "openclaw", Model: "claude-sonnet-4", InputPer1K: 0.003, OutputPer1K: 0.015},
 		{Provider: "openclaw", Model: "claude-haiku-4", InputPer1K: 0.0008, OutputPer1K: 0.004},
 		{Provider: "openclaw", Model: "claude-opus-4", InputPer1K: 0.015, OutputPer1K: 0.075},

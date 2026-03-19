@@ -39,6 +39,8 @@ export const en: Record<string, string> = {
   // Add Agent Modal
   'addAgent.title': 'Add Agent',
   'addAgent.name': 'Agent Name',
+  'addAgent.description': 'Description',
+  'addAgent.descriptionPlaceholder': 'e.g., Design login page with high-fidelity mockups',
   'addAgent.type': 'Agent Type',
   'addAgent.model': 'Model',
   'addAgent.workdir': 'Working Directory',

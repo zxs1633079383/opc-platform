@@ -4,7 +4,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, RefreshCw, Play, Square, RotateCw, Bot, X, DollarSign, Cpu, AlertTriangle } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useState } from 'react'
-import { fetchAgents, startAgent, stopAgent, restartAgent, createAgent } from '@/lib/api'
+import { fetchAgents, startAgent, stopAgent, restartAgent } from '@/lib/api'
+import { AddAgentModal } from '@/components/AddAgentModal'
 
 const phaseColors: Record<string, string> = {
   Running: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
@@ -31,7 +32,6 @@ function formatTokens(n: number): string {
 export default function AgentsPage() {
   const queryClient = useQueryClient()
   const [showModal, setShowModal] = useState(false)
-  const [newAgent, setNewAgent] = useState({ name: '', type: 'claude-code', model: '' })
   const [actionError, setActionError] = useState<string | null>(null)
 
   const { data: agents = [], isLoading, refetch } = useQuery({
@@ -54,16 +54,6 @@ export default function AgentsPage() {
   const restartMutation = useMutation({
     mutationFn: restartAgent,
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['agents'] }); setActionError(null) },
-    onError: (err: Error) => setActionError(err.message),
-  })
-
-  const createMutation = useMutation({
-    mutationFn: () => createAgent(newAgent),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['agents'] })
-      setShowModal(false)
-      setNewAgent({ name: '', type: 'claude-code', model: '' })
-    },
     onError: (err: Error) => setActionError(err.message),
   })
 
@@ -248,68 +238,7 @@ export default function AgentsPage() {
       )}
 
       {/* Add Agent Modal */}
-      {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="fixed inset-0 bg-black/50" onClick={() => setShowModal(false)} />
-          <div className="relative bg-white dark:bg-gray-900 rounded-xl shadow-xl border border-gray-200 dark:border-gray-800 p-6 w-full max-w-md mx-4">
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Add Agent</h2>
-              <button onClick={() => setShowModal(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Agent Name</label>
-                <input
-                  type="text"
-                  value={newAgent.name}
-                  onChange={(e) => setNewAgent({ ...newAgent, name: e.target.value })}
-                  placeholder="e.g., my-agent"
-                  className="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Agent Type</label>
-                <select
-                  value={newAgent.type}
-                  onChange={(e) => setNewAgent({ ...newAgent, type: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                >
-                  <option value="claude-code">Claude Code</option>
-                  <option value="openclaw">OpenClaw</option>
-                  <option value="codex">Codex</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Model (optional)</label>
-                <input
-                  type="text"
-                  value={newAgent.model}
-                  onChange={(e) => setNewAgent({ ...newAgent, model: e.target.value })}
-                  placeholder="e.g., claude-sonnet-4-20250514"
-                  className="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                />
-              </div>
-            </div>
-            <div className="flex justify-end gap-3 mt-6">
-              <button
-                onClick={() => setShowModal(false)}
-                className="px-4 py-2 text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => createMutation.mutate()}
-                disabled={!newAgent.name || createMutation.isPending}
-                className="px-4 py-2 text-sm text-white bg-primary-600 hover:bg-primary-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {createMutation.isPending ? 'Creating...' : 'Create Agent'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <AddAgentModal isOpen={showModal} onClose={() => setShowModal(false)} />
     </div>
   )
 }

@@ -61,13 +61,14 @@ type AgentSpec struct {
 
 // AgentSpecBody contains the spec fields for an AgentSpec.
 type AgentSpecBody struct {
-	Type     AgentType     `yaml:"type" json:"type"`
-	Replicas int           `yaml:"replicas,omitempty" json:"replicas,omitempty"`
-	Runtime  RuntimeConfig `yaml:"runtime,omitempty" json:"runtime,omitempty"`
-	Resources ResourceConfig `yaml:"resources,omitempty" json:"resources,omitempty"`
-	Context  ContextConfig `yaml:"context,omitempty" json:"context,omitempty"`
+	Type        AgentType     `yaml:"type" json:"type"`
+	Description string        `yaml:"description,omitempty" json:"description,omitempty"`
+	Replicas    int           `yaml:"replicas,omitempty" json:"replicas,omitempty"`
+	Runtime     RuntimeConfig `yaml:"runtime,omitempty" json:"runtime,omitempty"`
+	Resources   ResourceConfig `yaml:"resources,omitempty" json:"resources,omitempty"`
+	Context     ContextConfig `yaml:"context,omitempty" json:"context,omitempty"`
 	HealthCheck HealthCheckConfig `yaml:"healthCheck,omitempty" json:"healthCheck,omitempty"`
-	Recovery RecoveryConfig `yaml:"recovery,omitempty" json:"recovery,omitempty"`
+	Recovery    RecoveryConfig `yaml:"recovery,omitempty" json:"recovery,omitempty"`
 
 	// Custom agent fields.
 	Command  []string          `yaml:"command,omitempty" json:"command,omitempty"`
