@@ -18,12 +18,19 @@ const (
 	maxBackoffDelay            = 5 * time.Minute
 )
 
+const (
+	defaultConsecutiveFailureThreshold = 3
+)
+
 // lifecycleState tracks restart and health check state for a managed agent.
 type lifecycleState struct {
-	mu                sync.Mutex
-	restartCount      int
-	lastRestart       time.Time
-	healthCheckCancel context.CancelFunc
+	mu                    sync.Mutex
+	restartCount          int
+	lastRestart           time.Time
+	healthCheckCancel     context.CancelFunc
+	consecutiveFailures   int       // v0.7: consecutive health check failures before restart
+	lastHealthStatus      bool      // v0.7: last known health status
+	lastHealthCheckAt     time.Time // v0.7: last health check time
 }
 
 // StartHealthCheckLoop starts a background goroutine that periodically checks
@@ -67,24 +74,51 @@ func (c *Controller) runHealthChecks(ctx context.Context) {
 // if the health check fails and recovery is enabled.
 func (c *Controller) checkAndRestart(ctx context.Context, name string, ma *managedAgent) {
 	status := ma.adapter.Health()
+	ls := c.getLifecycleState(name)
+	ls.mu.Lock()
+	defer ls.mu.Unlock()
+
+	ls.lastHealthCheckAt = time.Now()
+
 	if status.Healthy {
+		// Reset consecutive failure counter on success.
+		if ls.consecutiveFailures > 0 {
+			c.logger.Infow("agent health recovered",
+				"name", name,
+				"previousFailures", ls.consecutiveFailures,
+			)
+			ls.consecutiveFailures = 0
+			ls.lastHealthStatus = true
+		}
 		return
+	}
+
+	ls.consecutiveFailures++
+	ls.lastHealthStatus = false
+
+	// Determine failure threshold from spec or default.
+	failureThreshold := ma.spec.Spec.HealthCheck.Retries
+	if failureThreshold <= 0 {
+		failureThreshold = defaultConsecutiveFailureThreshold
 	}
 
 	c.logger.Warnw("agent health check failed",
 		"name", name,
 		"message", status.Message,
+		"consecutiveFailures", ls.consecutiveFailures,
+		"threshold", failureThreshold,
 	)
+
+	// Don't restart until we reach the consecutive failure threshold.
+	if ls.consecutiveFailures < failureThreshold {
+		return
+	}
 
 	recovery := ma.spec.Spec.Recovery
 	if !recovery.Enabled {
 		c.logger.Infow("auto-restart disabled for agent, skipping", "name", name)
 		return
 	}
-
-	ls := c.getLifecycleState(name)
-	ls.mu.Lock()
-	defer ls.mu.Unlock()
 
 	maxRestarts := recovery.MaxRestarts
 	if maxRestarts <= 0 {
@@ -132,6 +166,9 @@ func (c *Controller) checkAndRestart(ctx context.Context, name string, ma *manag
 	c.updateAgentPhase(ctx, name, v1.AgentPhaseRetrying,
 		fmt.Sprintf("restart attempt %d/%d", ls.restartCount, maxRestarts))
 
+	// Reset consecutive failures — restart is being attempted.
+	ls.consecutiveFailures = 0
+
 	go func() {
 		if err := c.restartAgentInternal(ctx, name); err != nil {
 			c.logger.Errorw("auto-restart failed",
@@ -140,6 +177,8 @@ func (c *Controller) checkAndRestart(ctx context.Context, name string, ma *manag
 				"attempt", ls.restartCount,
 			)
 			c.updateAgentPhase(ctx, name, v1.AgentPhaseFailed, err.Error())
+		} else {
+			c.logger.Infow("agent auto-restart succeeded", "name", name, "attempt", ls.restartCount)
 		}
 	}()
 }

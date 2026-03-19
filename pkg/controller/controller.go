@@ -22,6 +22,7 @@ type Controller struct {
 	agents   map[string]*managedAgent
 	logger   *zap.SugaredLogger
 	costMgr  *cost.Tracker
+	quotaEnforcer *cost.QuotaEnforcer
 
 	// Circuit breaker: consecutive failure count per agent.
 	failCounts map[string]int
@@ -45,11 +46,12 @@ const circuitBreakerThreshold = 5
 // New creates a new Controller.
 func New(store storage.Store, registry *adapter.Registry, logger *zap.SugaredLogger) *Controller {
 	return &Controller{
-		store:      store,
-		registry:   registry,
-		agents:     make(map[string]*managedAgent),
-		failCounts: make(map[string]int),
-		logger:     logger,
+		store:         store,
+		registry:      registry,
+		agents:        make(map[string]*managedAgent),
+		failCounts:    make(map[string]int),
+		logger:        logger,
+		quotaEnforcer: cost.NewQuotaEnforcer(logger),
 	}
 }
 
@@ -281,6 +283,35 @@ func (c *Controller) ExecuteTask(ctx context.Context, task v1.TaskRecord) (adapt
 		return adapter.ExecuteResult{}, err
 	}
 
+	// Check per-agent quota (v0.7).
+	if c.quotaEnforcer != nil {
+		qc := c.buildQuotaConfig(task.AgentName)
+		qr := c.quotaEnforcer.Check(task.AgentName, qc)
+		if qr.AlertMsg != "" {
+			c.logger.Warnw("quota alert", "agent", task.AgentName, "alert", qr.AlertMsg)
+		}
+		if !qr.Allowed {
+			c.logger.Warnw("quota exceeded", "agent", task.AgentName, "reason", qr.Reason, "action", qr.Action)
+			if qr.Action == cost.ExceedPause {
+				if stopErr := c.StopAgent(ctx, task.AgentName); stopErr == nil {
+					if rec, getErr := c.store.GetAgent(ctx, task.AgentName); getErr == nil {
+						rec.Phase = v1.AgentPhaseStopped
+						rec.Message = "paused: " + qr.Reason
+						c.store.UpdateAgent(ctx, rec)
+					}
+				}
+			}
+			if qr.Action != cost.ExceedAlert {
+				now := time.Now()
+				task.Status = v1.TaskStatusFailed
+				task.Error = "quota exceeded: " + qr.Reason
+				task.EndedAt = &now
+				c.store.UpdateTask(ctx, task)
+				return adapter.ExecuteResult{}, fmt.Errorf("quota exceeded: %s", qr.Reason)
+			}
+		}
+	}
+
 	now := time.Now()
 	task.Status = v1.TaskStatusRunning
 	task.StartedAt = &now
@@ -363,6 +394,11 @@ func (c *Controller) ExecuteTask(ctx context.Context, task v1.TaskRecord) (adapt
 		})
 	}
 
+	// Record usage for quota enforcement (v0.7).
+	if c.quotaEnforcer != nil {
+		c.quotaEnforcer.RecordUsage(task.AgentName, result.TokensIn, result.TokensOut, task.Cost)
+	}
+
 	if storeErr := c.store.UpdateTask(ctx, task); storeErr != nil {
 		c.logger.Errorw("failed to update task status", "task", task.ID, "error", storeErr)
 	}
@@ -373,6 +409,27 @@ func (c *Controller) ExecuteTask(ctx context.Context, task v1.TaskRecord) (adapt
 		"cost", task.Cost, "duration", endTime.Sub(execStart))
 
 	return result, nil
+}
+
+// buildQuotaConfig extracts QuotaConfig from the agent's spec.
+func (c *Controller) buildQuotaConfig(agentName string) cost.QuotaConfig {
+	c.mu.RLock()
+	ma, ok := c.agents[agentName]
+	c.mu.RUnlock()
+	if !ok {
+		return cost.QuotaConfig{}
+	}
+
+	res := ma.spec.Spec.Resources
+	return cost.QuotaConfig{
+		TokenPerTask: res.TokenBudget.PerTask,
+		TokenPerHour: res.TokenBudget.PerHour,
+		TokenPerDay:  res.TokenBudget.PerDay,
+		CostPerTask:  cost.ParseCostString(res.CostLimit.PerTask),
+		CostPerDay:   cost.ParseCostString(res.CostLimit.PerDay),
+		CostPerMonth: cost.ParseCostString(res.CostLimit.PerMonth),
+		OnExceed:     cost.ExceedAction(res.OnExceed),
+	}
 }
 
 // StreamTask runs a task with streaming output.
