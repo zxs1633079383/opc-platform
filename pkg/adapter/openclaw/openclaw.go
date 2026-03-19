@@ -37,13 +37,14 @@ var scopes = []string{"operator.read", "operator.write"}
 
 // rpcMessage is the generic envelope for all WS messages.
 type rpcMessage struct {
-	Type   string          `json:"type"`
-	ID     string          `json:"id,omitempty"`
-	Method string          `json:"method,omitempty"`
-	Event  string          `json:"event,omitempty"`
-	Params json.RawMessage `json:"params,omitempty"`
-	Result json.RawMessage `json:"result,omitempty"`
-	Error  *rpcError       `json:"error,omitempty"`
+	Type    string          `json:"type"`
+	ID      string          `json:"id,omitempty"`
+	Method  string          `json:"method,omitempty"`
+	Event   string          `json:"event,omitempty"`
+	Params  json.RawMessage `json:"params,omitempty"`
+	Payload json.RawMessage `json:"payload,omitempty"` // OpenClaw events use "payload" instead of "params"
+	Result  json.RawMessage `json:"result,omitempty"`
+	Error   *rpcError       `json:"error,omitempty"`
 }
 
 type rpcError struct {
@@ -266,14 +267,24 @@ func (a *Adapter) Start(ctx context.Context, spec v1.AgentSpec) error {
 	}
 
 	// Parse connID from response if available.
+	// OpenClaw hello-ok response nests connId under "server" object.
 	if resp.Result != nil {
 		var helloResult struct {
 			ConnID string `json:"connId"`
+			Server struct {
+				ConnID string `json:"connId"`
+			} `json:"server"`
 		}
-		if json.Unmarshal(resp.Result, &helloResult) == nil && helloResult.ConnID != "" {
-			a.mu.Lock()
-			a.connID = helloResult.ConnID
-			a.mu.Unlock()
+		if json.Unmarshal(resp.Result, &helloResult) == nil {
+			connID := helloResult.ConnID
+			if connID == "" {
+				connID = helloResult.Server.ConnID
+			}
+			if connID != "" {
+				a.mu.Lock()
+				a.connID = connID
+				a.mu.Unlock()
+			}
 		}
 	}
 
@@ -403,9 +414,13 @@ func (a *Adapter) readLoop() {
 
 func (a *Adapter) handleEvent(msg rpcMessage) {
 	if msg.Event == "connect.challenge" {
-		// Deliver challenge to Start() goroutine.
+		// OpenClaw sends challenge data in "payload"; fall back to "params" for compatibility.
+		data := msg.Payload
+		if len(data) == 0 {
+			data = msg.Params
+		}
 		select {
-		case a.challengeCh <- msg.Params:
+		case a.challengeCh <- data:
 		default:
 		}
 	}
@@ -423,8 +438,13 @@ func (a *Adapter) handleResponse(msg rpcMessage) {
 	a.pendingMu.Unlock()
 
 	if ok {
+		// OpenClaw responses use "payload" for success data; fall back to "result" for compat.
+		result := msg.Payload
+		if len(result) == 0 {
+			result = msg.Result
+		}
 		resp := &rpcResponse{
-			Result: msg.Result,
+			Result: result,
 			Error:  msg.Error,
 		}
 		select {
