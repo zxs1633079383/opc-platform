@@ -24,23 +24,42 @@ opc_platform/
 ├── cmd/
 │   └── opctl/           # CLI 入口
 ├── pkg/
+│   ├── a2a/             # A2A protobuf 通信层（Bridge/Server/Client/Convert）
 │   ├── adapter/         # Agent 适配器
 │   │   ├── openclaw/
 │   │   ├── claudecode/
-│   │   └── codex/
+│   │   ├── codex/
+│   │   ├── openai/
+│   │   └── custom/
+│   ├── auth/            # 认证授权
 │   ├── controller/      # 生命周期控制器
+│   ├── cost/            # 成本追踪 + 配额执行
 │   ├── dispatcher/      # 智能调度
+│   ├── evolve/          # 自演进循环：指标采集 + RFC（v0.7 预研）
+│   ├── federation/      # 联邦协同 + gRPC 通信
+│   ├── gateway/         # 外部接入（Telegram/Discord）
+│   ├── goal/            # Goal 分解 + DAG 执行 + A2A 评审
+│   ├── model/           # 模型注册表（v0.7）
+│   ├── server/          # REST API + gRPC Server
+│   ├── storage/         # 状态存储（SQLite/PostgreSQL）
+│   ├── tenant/          # 多租户
+│   ├── trace/           # 分布式追踪
 │   ├── workflow/        # 工作流引擎
-│   ├── storage/         # 状态存储
-│   ├── cost/            # 成本追踪
 │   └── audit/           # 审计日志
+├── proto/
+│   ├── a2a/             # Google A2A 标准 protobuf 定义
+│   └── opc/             # OPC gRPC 服务定义
+├── gen/                 # protobuf 生成代码（make proto）
 ├── api/
 │   └── v1/              # YAML 规范定义
+├── dashboard/           # Next.js + React 前端（:4000）
+├── test/
+│   └── integration/     # gRPC 集成测试
 ├── internal/
 │   └── config/          # 配置管理
 ├── docs/
 ├── examples/
-└── test/
+└── Makefile             # proto 生成 + 构建
 ```
 
 ### 开发流程
@@ -55,10 +74,10 @@ opc_platform/
 - 每个 Phase 完成后打 tag
 
 ## 当前阶段
-Phase 1: Foundation（Week 1-2）
-
-## 立即开始
-从 Task 1.1.1 开始：CLI 骨架搭建
+Phase 7: Production Hardening + Self-Evolving Loop（v0.7 进行中）
+- A2A protobuf 通信已实现（gRPC :9528）
+- Dashboard 全面升级（Agent 向导 / Goal 树形 / RFC 审批 / 指标仪表盘）
+- 测试覆盖率 P0 包全部 80%+
 
 <!-- gitnexus:start -->
 # GitNexus MCP
