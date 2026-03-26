@@ -3,7 +3,7 @@
 **Kubernetes for AI Agents** — Manage AI agent clusters like container orchestration.
 
 [![Go](https://img.shields.io/badge/Go-1.22+-00ADD8?logo=go)](https://go.dev)
-[![Status](https://img.shields.io/badge/Status-v0.4_Federation-green)]()
+[![Status](https://img.shields.io/badge/Status-v0.7_Hardening-green)]()
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Tests](https://img.shields.io/badge/Tests-15%2F15_Passing-brightgreen)]()
 
@@ -15,7 +15,9 @@
 
 OPC Platform is a **standalone** AI Agent orchestration platform. Just like Kubernetes manages containers, OPC Platform lets you manage multiple AI Agents with declarative YAML configs, enabling automated workflows, cost control, and intelligent scheduling.
 
-**v0.4 Federation** introduces multi-company collaboration — organize AI agent teams into independent companies and coordinate them through a federated goal hierarchy.
+**v0.7 Hardening** brings A2A protobuf communication (gRPC :9528), production-grade test coverage (P0 packages all 80%+), a fully upgraded Dashboard, and self-evolving loop foundations.
+
+**v0.4 Federation** introduced multi-company collaboration — organize AI agent teams into independent companies and coordinate them through a federated goal hierarchy.
 
 **Important: OPC Platform does NOT depend on Kubernetes! It IS the orchestration system for AI Agents.**
 
@@ -149,10 +151,15 @@ curl -X POST http://127.0.0.1:9527/api/run \
 - **Human-in-the-Loop** — Intervention system with approval gates for critical decisions
 - **[Federation Guide](docs/federation.md)** — Full documentation
 
+### A2A Communication (v0.7)
+- **gRPC Server (:9528)** — AgentService + FederationService via protobuf
+- **A2A Protocol** — Google A2A standard protobuf definitions
+- **Bridge Layer** — Transparent REST/gRPC bridging
+
 ### Gateway
 - **Telegram Bot** — /run, /status, /agents commands
 - **Discord Bot** — Slash Commands support
-- **Web Dashboard** — Next.js management UI
+- **Web Dashboard** — Next.js management UI (Agent wizard, Goal tree, RFC approval, metrics)
 
 ### Cost Control
 - **Token Metering** — Precise tracking per task
@@ -301,6 +308,9 @@ opctl cluster status
 ## Testing
 
 ```bash
+# Generate protobuf code (requires protoc + Go plugins)
+make proto
+
 # Unit tests
 go test ./...
 
@@ -341,9 +351,22 @@ go test ./...
 - [x] Human-in-the-loop intervention
 - [x] Approval gates
 
-### v0.5 (Planned)
-- [ ] Web UI improvements
-- [ ] More agent types (Gemini, Cursor)
+### v0.5-v0.6
+- [x] AI Goal decomposition + A2A review
+- [x] Quota enforcement + CI integration
+- [x] Federation auth + retry queue
+
+### v0.7 Hardening (Current)
+- [x] A2A protobuf communication (gRPC :9528)
+- [x] Test coverage: P0 packages all 80%+
+- [x] Dashboard upgrade (Agent wizard, Goal tree, RFC approval, metrics)
+- [x] Model registry API
+- [x] Self-evolving loop foundation (MetricsCollector)
+- [ ] OpenClaw key persistence
+- [ ] Goal decomposition persistence
+
+### v0.8 (Planned)
+- [ ] Full self-evolving loop (metrics + AI analysis + RFC)
 - [ ] Agent marketplace
 - [ ] Plugin system
 
