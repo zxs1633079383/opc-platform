@@ -83,6 +83,8 @@ func (fc *FederationController) RegisterCompany(reg CompanyRegistration) (*Compa
 		Status:       initialStatus,
 		Agents:       reg.Agents,
 		APIKey:       GenerateAPIKey(),
+		GRPCEndpoint: reg.GRPCEndpoint,
+		SupportsGRPC: reg.GRPCEndpoint != "",
 		JoinedAt:     time.Now().UTC(),
 	}
 

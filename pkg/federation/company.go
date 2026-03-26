@@ -31,6 +31,8 @@ type Company struct {
 	Status       CompanyStatus `json:"status"`
 	Agents       []string      `json:"agents,omitempty"`
 	APIKey       string        `json:"apiKey,omitempty"`
+	GRPCEndpoint string        `json:"grpcEndpoint,omitempty"` // e.g. "worker-host:9528"
+	SupportsGRPC bool          `json:"supportsGrpc,omitempty"`
 	JoinedAt     time.Time     `json:"joinedAt"`
 }
 
@@ -41,4 +43,5 @@ type CompanyRegistration struct {
 	DashboardURL string      `json:"dashboardUrl,omitempty"`
 	Type         CompanyType `json:"type"`
 	Agents       []string    `json:"agents,omitempty"`
+	GRPCEndpoint string      `json:"grpcEndpoint,omitempty"`
 }
