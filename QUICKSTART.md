@@ -25,7 +25,7 @@ opctl version
 
 输出：
 ```
-opctl version: 0.1.0-dev
+opctl version: 0.7.0-dev
   Git Commit:  (unknown)
   Build Date:  (unknown)
   Go Version:  go1.23.4
@@ -492,6 +492,120 @@ spec:
 
 ---
 
+## 12. Dashboard 可视化
+
+OPC Platform 内置 Web Dashboard，启动 server 后自动可用：
+
+```bash
+# Dashboard 默认运行在 :4000
+open http://localhost:4000
+```
+
+Dashboard 功能：
+- **总览**：Agent 状态、运行中任务、今日成本、健康率
+- **Agent 管理**：启停、扩缩容、查看指标
+- **Goal 树形可视化**：Goal → Project → Task → Issue 层级展开
+- **Workflow 执行详情**：每个 Step 的状态、耗时、输出
+- **成本报表**：按 Goal / Agent / 时间的成本分析
+- **联邦状态**：节点健康心跳、跨节点任务进度
+- **系统指标**：SuccessRate / AvgLatency / RetryRate 趋势图
+- **RFC 审批**：系统自动生成的改进提案审批
+
+---
+
+## 13. 无代码 Agent 创建（Agent 向导）
+
+不需要编写 YAML，通过 Dashboard 向导 4 步创建 Agent：
+
+1. **选择类型**：Claude Code / OpenClaw / OpenAI / 自定义
+2. **描述能力 + 选择模型**：用自然语言描述，系统自动推断技能标签
+3. **资源配置**：选择预设方案（轻量 $5/天 / 标准 $20/天 / 高性能 $100/天）
+4. **确认创建**：预览生成的 YAML，一键注册
+
+也可以通过 API 调用：
+
+```bash
+curl -X POST http://localhost:9527/api/agents/wizard \
+  -H "Content-Type: application/json" \
+  -d '{
+    "type": "claude-code",
+    "description": "帮我审查代码、找 bug、写单元测试",
+    "model": "claude-sonnet-4-6",
+    "preset": "standard",
+    "replicas": 1,
+    "onExceed": "alert"
+  }'
+```
+
+---
+
+## 14. 模型管理
+
+查看可用模型：
+
+```bash
+curl http://localhost:9527/api/models | jq
+```
+
+添加自定义模型：
+
+```bash
+curl -X POST http://localhost:9527/api/models \
+  -H "Content-Type: application/json" \
+  -d '{
+    "id": "deepseek-v3",
+    "provider": "custom",
+    "displayName": "DeepSeek V3",
+    "tier": "standard",
+    "costPer1k": 0.001,
+    "capability": "balanced"
+  }'
+```
+
+---
+
+## 15. A2A 通信（gRPC）
+
+OPC v0.7 引入 Google A2A 标准协议，所有 Agent 管控和联邦通信均使用 protobuf + gRPC：
+
+- **REST API** (:9527) — Dashboard 和 opctl CLI 使用
+- **gRPC** (:9528) — Agent 通信 + Federation 节点间通信
+
+重建 proto 文件：
+
+```bash
+# 安装 protoc 插件（仅首次）
+go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+
+# 生成代码
+make proto
+```
+
+---
+
+## 16. 系统指标 & RFC（v0.7 预研）
+
+查看系统运行指标：
+
+```bash
+curl http://localhost:9527/api/system/metrics | jq
+```
+
+查看 RFC 改进提案：
+
+```bash
+curl http://localhost:9527/api/system/rfcs | jq
+```
+
+审批 RFC：
+
+```bash
+curl -X POST http://localhost:9527/api/system/rfcs/{id}/approve
+```
+
+---
+
 ## 配置文件位置
 
 ```
@@ -512,3 +626,5 @@ spec:
 - 阅读 [docs/COMMANDS.md](docs/COMMANDS.md) 查看完整命令参考
 - 查看 [examples/](examples/) 目录了解更多配置示例
 - 阅读 [OPC_Platform_PRD.md](OPC_Platform_PRD.md) 了解产品设计理念
+- 访问 Dashboard [http://localhost:4000](http://localhost:4000) 使用可视化管理界面
+- 阅读 [docs/superpowers/specs/2026-03-26-v07-a2a-protobuf-ui-design.md](docs/superpowers/specs/2026-03-26-v07-a2a-protobuf-ui-design.md) 了解 A2A 设计
