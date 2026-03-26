@@ -1,0 +1,83 @@
+syntax = "proto3";
+package opc;
+option go_package = "github.com/zlc-ai/opc-platform/gen/opc";
+
+import "a2a/a2a.proto";
+import "opc/types.proto";
+
+service AgentService {
+  rpc Start(StartRequest) returns (StartResponse);
+  rpc Stop(StopRequest) returns (StopResponse);
+  rpc Health(HealthRequest) returns (HealthResponse);
+  rpc SendTask(SendTaskRequest) returns (SendTaskResponse);
+  rpc SendTaskStreaming(SendTaskStreamingRequest) returns (stream TaskStatusUpdate);
+  rpc GetTask(GetTaskRequest) returns (a2a.Task);
+  rpc CancelTask(CancelTaskRequest) returns (a2a.Task);
+  rpc GetAgentCard(GetAgentCardRequest) returns (a2a.AgentCard);
+}
+
+message StartRequest {
+  string agent_name = 1;
+  string spec_yaml  = 2;
+}
+
+message StartResponse {
+  bool   success = 1;
+  string message = 2;
+}
+
+message StopRequest {
+  string agent_name = 1;
+}
+
+message StopResponse {
+  bool success = 1;
+}
+
+message HealthRequest {
+  string agent_name = 1;
+}
+
+message HealthResponse {
+  bool   healthy = 1;
+  string message = 2;
+}
+
+message SendTaskRequest {
+  string              task_id    = 1;
+  string              agent_name = 2;
+  a2a.Message         message    = 3;
+  string              session_id = 4;
+  map<string, string> metadata   = 5;
+}
+
+message SendTaskResponse {
+  a2a.Task   task = 1;
+  CostReport cost = 2;
+}
+
+message SendTaskStreamingRequest {
+  string      task_id    = 1;
+  string      agent_name = 2;
+  a2a.Message message    = 3;
+  string      session_id = 4;
+}
+
+message TaskStatusUpdate {
+  a2a.TaskStatus status   = 1;
+  a2a.Artifact   artifact = 2;
+  bool           final    = 3;
+  CostReport     cost     = 4;
+}
+
+message GetTaskRequest {
+  string task_id = 1;
+}
+
+message CancelTaskRequest {
+  string task_id = 1;
+}
+
+message GetAgentCardRequest {
+  string agent_name = 1;
+}

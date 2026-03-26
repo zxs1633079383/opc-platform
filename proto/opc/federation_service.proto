@@ -1,0 +1,99 @@
+syntax = "proto3";
+package opc;
+option go_package = "github.com/zlc-ai/opc-platform/gen/opc";
+
+import "a2a/a2a.proto";
+import "opc/types.proto";
+
+service FederationService {
+  rpc Register(RegisterRequest) returns (RegisterResponse);
+  rpc HeartbeatStream(stream HeartbeatPing) returns (stream HeartbeatPong);
+  rpc DispatchProject(DispatchProjectRequest) returns (DispatchProjectResponse);
+  rpc ReportTaskResult(ReportTaskResultRequest) returns (ReportTaskResultResponse);
+  rpc AssessResult(AssessRequest) returns (AssessResponse);
+  rpc GetFederationStatus(GetFederationStatusRequest) returns (FederationStatusResponse);
+}
+
+message RegisterRequest {
+  string          node_id          = 1;
+  string          company          = 2;
+  string          endpoint         = 3;
+  repeated string available_agents = 4;
+  string          api_key          = 5;
+}
+
+message RegisterResponse {
+  bool   accepted    = 1;
+  string assigned_id = 2;
+  string message     = 3;
+}
+
+message HeartbeatPing {
+  string          node_id          = 1;
+  string          company          = 2;
+  repeated string available_agents = 3;
+  ResourceUsage   resources        = 4;
+  int64           timestamp        = 5;
+}
+
+message HeartbeatPong {
+  bool                     accepted = 1;
+  repeated PendingDispatch pending  = 2;
+}
+
+message DispatchProjectRequest {
+  string          goal_id          = 1;
+  string          project_name     = 2;
+  string          agent_name       = 3;
+  string          company          = 4;
+  a2a.Message     task_message     = 5;
+  repeated string dependencies     = 6;
+  string          trace_context    = 7;
+  CostConstraints cost_constraints = 8;
+}
+
+message DispatchProjectResponse {
+  bool   accepted = 1;
+  string task_id  = 2;
+  string message  = 3;
+}
+
+message ReportTaskResultRequest {
+  string           goal_id        = 1;
+  string           project_name   = 2;
+  a2a.Task         completed_task = 3;
+  CostReport       cost           = 4;
+  AssessmentResult assessment     = 5;
+}
+
+message ReportTaskResultResponse {
+  bool   acknowledged = 1;
+  string next_action  = 2;
+}
+
+message AssessRequest {
+  string goal_name           = 1;
+  string project_description = 2;
+  string result              = 3;
+}
+
+message AssessResponse {
+  AssessmentResult assessment = 1;
+}
+
+message GetFederationStatusRequest {}
+
+message FederationStatusResponse {
+  repeated NodeStatus nodes        = 1;
+  int32               total_agents = 2;
+  int32               active_goals = 3;
+}
+
+message NodeStatus {
+  string          node_id        = 1;
+  string          company        = 2;
+  string          status         = 3;
+  int64           last_heartbeat = 4;
+  repeated string agents         = 5;
+  ResourceUsage   resources      = 6;
+}

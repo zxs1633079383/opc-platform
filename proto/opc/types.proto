@@ -1,0 +1,38 @@
+syntax = "proto3";
+package opc;
+option go_package = "github.com/zlc-ai/opc-platform/gen/opc";
+
+message CostReport {
+  int64  tokens_in    = 1;
+  int64  tokens_out   = 2;
+  double cost_usd     = 3;
+  int64  duration_ms  = 4;
+  bool   estimated    = 5;
+}
+
+message CostConstraints {
+  int64  max_tokens   = 1;
+  double max_cost_usd = 2;
+  string on_exceed    = 3;
+}
+
+message ResourceUsage {
+  double cpu_percent    = 1;
+  double memory_percent = 2;
+  int32  active_agents  = 3;
+  int32  running_tasks  = 4;
+}
+
+message AssessmentResult {
+  bool   satisfied = 1;
+  string reason    = 2;
+  string follow_up = 3;
+  string category  = 4;
+}
+
+message PendingDispatch {
+  string goal_id      = 1;
+  string project_name = 2;
+  string agent_name   = 3;
+  string message      = 4;
+}
