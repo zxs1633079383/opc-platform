@@ -5,7 +5,7 @@ import { Plus, RefreshCw, Play, Square, RotateCw, Bot, X, DollarSign, Cpu, Alert
 import { clsx } from 'clsx'
 import { useState } from 'react'
 import { fetchAgents, startAgent, stopAgent, restartAgent } from '@/lib/api'
-import { AddAgentModal } from '@/components/AddAgentModal'
+import { AgentWizard } from '@/components/AgentWizard/AgentWizard'
 
 const phaseColors: Record<string, string> = {
   Running: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
@@ -237,8 +237,8 @@ export default function AgentsPage() {
         </div>
       )}
 
-      {/* Add Agent Modal */}
-      <AddAgentModal isOpen={showModal} onClose={() => setShowModal(false)} />
+      {/* Agent Wizard */}
+      <AgentWizard isOpen={showModal} onClose={() => setShowModal(false)} />
     </div>
   )
 }
