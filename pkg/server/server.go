@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -15,6 +16,9 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	v1 "github.com/zlc-ai/opc-platform/api/v1"
+	a2apb "github.com/zlc-ai/opc-platform/gen/a2a"
+	opcpb "github.com/zlc-ai/opc-platform/gen/opc"
+	"github.com/zlc-ai/opc-platform/pkg/a2a"
 	"github.com/zlc-ai/opc-platform/pkg/controller"
 	"github.com/zlc-ai/opc-platform/pkg/cost"
 	"github.com/zlc-ai/opc-platform/pkg/federation"
@@ -29,6 +33,7 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
+	"google.golang.org/grpc"
 	"gopkg.in/yaml.v3"
 )
 
@@ -45,6 +50,9 @@ type Server struct {
 	goalDriver   *goal.GoalDriver
 	retryQueue   *federation.RetryQueue
 
+	grpcServer *grpc.Server
+	bridge     *a2a.Bridge
+
 	// federatedGoalRuns tracks running federated goals for dependency-aware dispatch.
 	federatedGoalRunsMu sync.RWMutex
 	federatedGoalRuns   map[string]*goal.FederatedGoalRun // goalID -> run
@@ -53,6 +61,7 @@ type Server struct {
 // Config holds server configuration.
 type Config struct {
 	Port          int      `yaml:"port" json:"port"`
+	GRPCPort      int      `yaml:"grpcPort" json:"grpcPort"`
 	Host          string   `yaml:"host" json:"host"`
 	CORSOrigins   []string `yaml:"corsOrigins" json:"corsOrigins"`
 	EnableSwagger bool     `yaml:"enableSwagger" json:"enableSwagger"`
@@ -116,6 +125,11 @@ func (s *Server) Start(ctx context.Context) error {
 	// Start retry queue for failed federation callbacks.
 	if s.retryQueue != nil {
 		go s.retryQueue.ProcessLoop(ctx)
+	}
+
+	// Start gRPC server alongside REST.
+	if err := s.startGRPC(); err != nil {
+		return fmt.Errorf("start gRPC: %w", err)
 	}
 
 	gin.SetMode(gin.ReleaseMode)
@@ -239,8 +253,40 @@ func (s *Server) Start(ctx context.Context) error {
 	return nil
 }
 
-// Stop gracefully stops the HTTP server.
+// startGRPC launches the gRPC server on the configured port (default 9528).
+func (s *Server) startGRPC() error {
+	grpcPort := s.config.GRPCPort
+	if grpcPort == 0 {
+		grpcPort = 9528
+	}
+
+	lis, err := net.Listen("tcp", fmt.Sprintf("%s:%d", s.config.Host, grpcPort))
+	if err != nil {
+		return fmt.Errorf("listen gRPC :%d: %w", grpcPort, err)
+	}
+
+	s.bridge = a2a.NewBridge()
+	cards := make(map[string]*a2apb.AgentCard)
+	agentSrv := a2a.NewAgentServiceServer(s.bridge, cards)
+
+	s.grpcServer = grpc.NewServer()
+	opcpb.RegisterAgentServiceServer(s.grpcServer, agentSrv)
+
+	go func() {
+		s.logger.Infow("gRPC server starting", "port", grpcPort)
+		if err := s.grpcServer.Serve(lis); err != nil {
+			s.logger.Errorw("gRPC server error", "error", err)
+		}
+	}()
+
+	return nil
+}
+
+// Stop gracefully stops the HTTP and gRPC servers.
 func (s *Server) Stop(ctx context.Context) error {
+	if s.grpcServer != nil {
+		s.grpcServer.GracefulStop()
+	}
 	if s.httpServer == nil {
 		return nil
 	}
