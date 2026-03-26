@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Download, Calendar } from 'lucide-react'
 import { CostChart } from '@/components/CostChart'
 import { MetricCard } from '@/components/MetricCard'
+import { BudgetProgress } from '@/components/BudgetProgress'
 import { fetchCostData, fetchMetrics } from '@/lib/api'
 import { useTranslation } from '@/lib/i18n'
 
@@ -80,6 +81,13 @@ export default function CostsPage() {
         <div className="h-80">
           <CostChart data={costData} />
         </div>
+      </div>
+
+      {/* Budget Progress Bars */}
+      <div className="bg-white dark:bg-gray-900 rounded-xl shadow-sm border border-gray-200 dark:border-gray-800 p-6 space-y-4">
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">Budget Usage</h2>
+        <BudgetProgress used={todayCost} total={dailyBudget} label="Daily Budget" />
+        <BudgetProgress used={monthCost} total={monthlyBudget} label="Monthly Budget" />
       </div>
 
       {/* Budget Alerts */}

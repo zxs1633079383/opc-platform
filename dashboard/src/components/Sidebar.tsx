@@ -15,6 +15,8 @@ import {
   Languages,
   Menu,
   X,
+  BarChart3,
+  FileText,
 } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useState, useEffect } from 'react'
@@ -28,6 +30,8 @@ const navItems = [
   { href: '/workflows', label: 'Workflows', icon: Workflow },
   { href: '/federation', label: 'Federation', icon: Globe },
   { href: '/costs', label: 'Costs', icon: DollarSign },
+  { href: '/metrics', label: 'Metrics', icon: BarChart3 },
+  { href: '/rfcs', label: 'RFCs', icon: FileText },
   { href: '/logs', label: 'Logs', icon: ScrollText },
   { href: '/settings', label: 'Settings', icon: Settings },
 ]
