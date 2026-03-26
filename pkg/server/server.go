@@ -269,8 +269,15 @@ func (s *Server) startGRPC() error {
 	cards := make(map[string]*a2apb.AgentCard)
 	agentSrv := a2a.NewAgentServiceServer(s.bridge, cards)
 
-	s.grpcServer = grpc.NewServer()
+	keyStore := &federationKeyStore{fc: s.federation}
+	s.grpcServer = grpc.NewServer(
+		grpc.UnaryInterceptor(a2a.HMACUnaryInterceptor(keyStore)),
+		grpc.StreamInterceptor(a2a.HMACStreamInterceptor(keyStore)),
+	)
 	opcpb.RegisterAgentServiceServer(s.grpcServer, agentSrv)
+
+	fedSrv := federation.NewFederationGRPCServer(s.federation)
+	opcpb.RegisterFederationServiceServer(s.grpcServer, fedSrv)
 
 	go func() {
 		s.logger.Infow("gRPC server starting", "port", grpcPort)
@@ -280,6 +287,17 @@ func (s *Server) startGRPC() error {
 	}()
 
 	return nil
+}
+
+// federationKeyStore implements a2a.APIKeyStore using FederationController.
+type federationKeyStore struct {
+	fc *federation.FederationController
+}
+
+func (f *federationKeyStore) ValidateKey(key string) bool {
+	// For now, accept any non-empty key.
+	// Full validation requires looking up company by key — to be enhanced later.
+	return key != ""
 }
 
 // Stop gracefully stops the HTTP and gRPC servers.
