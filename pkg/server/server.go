@@ -10,6 +10,9 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -21,9 +24,11 @@ import (
 	"github.com/zlc-ai/opc-platform/pkg/a2a"
 	"github.com/zlc-ai/opc-platform/pkg/controller"
 	"github.com/zlc-ai/opc-platform/pkg/cost"
+	"github.com/zlc-ai/opc-platform/pkg/evolve"
 	"github.com/zlc-ai/opc-platform/pkg/federation"
 	"github.com/zlc-ai/opc-platform/pkg/gateway"
 	"github.com/zlc-ai/opc-platform/pkg/goal"
+	"github.com/zlc-ai/opc-platform/pkg/model"
 	"github.com/zlc-ai/opc-platform/pkg/storage"
 	opctrace "github.com/zlc-ai/opc-platform/pkg/trace"
 	"github.com/zlc-ai/opc-platform/pkg/workflow"
@@ -56,6 +61,12 @@ type Server struct {
 	// federatedGoalRuns tracks running federated goals for dependency-aware dispatch.
 	federatedGoalRunsMu sync.RWMutex
 	federatedGoalRuns   map[string]*goal.FederatedGoalRun // goalID -> run
+
+	// Model registry and evolve system.
+	modelRegistry    *model.Registry
+	metricsCollector *evolve.MetricsCollector
+	rfcsMu           sync.RWMutex
+	rfcs             []*evolve.RFC
 }
 
 // Config holds server configuration.
@@ -94,6 +105,7 @@ func New(
 		goalDriver:        goal.NewGoalDriver(adapter, logger),
 		retryQueue:        federation.NewRetryQueue(logger),
 		federatedGoalRuns: make(map[string]*goal.FederatedGoalRun),
+		modelRegistry:     model.NewRegistry(),
 	}
 }
 
@@ -234,6 +246,19 @@ func (s *Server) Start(ctx context.Context) error {
 		// --- settings ---
 		api.GET("/settings", s.getSettings)
 		api.PUT("/settings", s.updateSettings)
+
+		// --- models ---
+		api.GET("/models", s.handleListModels)
+		api.POST("/models", s.handleAddModel)
+
+		// --- agent wizard ---
+		api.POST("/agents/wizard", s.handleAgentWizard)
+
+		// --- system (evolve) ---
+		api.GET("/system/metrics", s.handleSystemMetrics)
+		api.GET("/system/rfcs", s.handleListRFCs)
+		api.POST("/system/rfcs/:id/approve", s.handleApproveRFC)
+		api.POST("/system/rfcs/:id/reject", s.handleRejectRFC)
 	}
 
 	addr := fmt.Sprintf("%s:%d", s.config.Host, s.config.Port)
@@ -2659,4 +2684,202 @@ func truncate(s string, maxLen int) string {
 		return s
 	}
 	return s[:maxLen] + "..."
+}
+
+// ---------------------------------------------------------------------------
+// Model API handlers (Task 24)
+// ---------------------------------------------------------------------------
+
+func (s *Server) handleListModels(c *gin.Context) {
+	c.JSON(http.StatusOK, s.modelRegistry.List())
+}
+
+func (s *Server) handleAddModel(c *gin.Context) {
+	var m model.ModelInfo
+	if err := c.ShouldBindJSON(&m); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	s.modelRegistry.Add(m)
+	c.JSON(http.StatusCreated, m)
+}
+
+// ---------------------------------------------------------------------------
+// Agent Wizard handler (Task 24)
+// ---------------------------------------------------------------------------
+
+// WizardRequest is the payload for no-code agent creation.
+type WizardRequest struct {
+	Type          string `json:"type"`
+	Description   string `json:"description"`
+	Model         string `json:"model"`
+	FallbackModel string `json:"fallbackModel,omitempty"`
+	Preset        string `json:"preset"`   // "light" | "standard" | "power" | "custom"
+	Replicas      int    `json:"replicas"`
+	OnExceed      string `json:"onExceed"` // "pause" | "alert" | "reject"
+}
+
+func (s *Server) handleAgentWizard(c *gin.Context) {
+	var req WizardRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Generate agent name from description (slugify first few words).
+	name := slugify(req.Description)
+
+	// Expand preset to budget.
+	var tokenPerDay, costPerDay int
+	switch req.Preset {
+	case "light":
+		tokenPerDay = 100000
+		costPerDay = 5
+	case "standard":
+		tokenPerDay = 1000000
+		costPerDay = 20
+	case "power":
+		tokenPerDay = 0 // 0 = unlimited
+		costPerDay = 100
+	}
+
+	// Infer skills from description.
+	skills := inferSkills(req.Description)
+
+	// Build AgentSpec.
+	spec := v1.AgentSpec{
+		APIVersion: v1.APIVersion,
+		Kind:       v1.KindAgentSpec,
+		Metadata:   v1.Metadata{Name: name},
+		Spec: v1.AgentSpecBody{
+			Type:        v1.AgentType(req.Type),
+			Description: req.Description,
+			Replicas:    req.Replicas,
+			Runtime: v1.RuntimeConfig{
+				Model: v1.ModelConfig{
+					Name:     req.Model,
+					Fallback: req.FallbackModel,
+				},
+			},
+			Resources: v1.ResourceConfig{
+				TokenBudget: v1.TokenBudgetConfig{PerDay: tokenPerDay},
+				CostLimit:   v1.CostLimitConfig{PerDay: fmt.Sprintf("$%d", costPerDay)},
+				OnExceed:    req.OnExceed,
+			},
+			Context: v1.ContextConfig{
+				Skills:  skills,
+				Workdir: "/tmp/opc/" + name,
+			},
+		},
+	}
+
+	if err := s.controller.Apply(c.Request.Context(), spec); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{
+		"name":    name,
+		"type":    req.Type,
+		"model":   req.Model,
+		"skills":  skills,
+		"message": "Agent created successfully via wizard",
+	})
+}
+
+// slugify takes a description and returns a short kebab-case name.
+func slugify(s string) string {
+	words := strings.Fields(strings.ToLower(s))
+	if len(words) > 3 {
+		words = words[:3]
+	}
+	name := strings.Join(words, "-")
+	reg := regexp.MustCompile(`[^a-z0-9-]`)
+	return reg.ReplaceAllString(name, "")
+}
+
+// inferSkills extracts skill tags from a description using keyword matching.
+func inferSkills(description string) []string {
+	lower := strings.ToLower(description)
+	skillMap := map[string][]string{
+		"code-review": {"审查", "review", "审核"},
+		"testing":     {"测试", "test", "单元测试", "unit test"},
+		"coding":      {"编写", "实现", "开发", "write", "implement", "develop", "code"},
+		"research":    {"研究", "分析", "research", "analyze"},
+		"writing":     {"写作", "文档", "writing", "document", "文案"},
+		"design":      {"设计", "design", "ui", "ux"},
+		"devops":      {"部署", "deploy", "ci", "cd", "运维"},
+	}
+	var skills []string
+	for skill, keywords := range skillMap {
+		for _, kw := range keywords {
+			if strings.Contains(lower, kw) {
+				skills = append(skills, skill)
+				break
+			}
+		}
+	}
+	if len(skills) == 0 {
+		skills = []string{"general"}
+	}
+	sort.Strings(skills)
+	return skills
+}
+
+// ---------------------------------------------------------------------------
+// System / Evolve API handlers (Task 34)
+// ---------------------------------------------------------------------------
+
+func (s *Server) handleSystemMetrics(c *gin.Context) {
+	if s.metricsCollector != nil {
+		metrics, err := s.metricsCollector.Collect()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, metrics)
+		return
+	}
+	// Return stub data when no collector is configured.
+	c.JSON(http.StatusOK, evolve.SystemMetrics{
+		Timestamp: time.Now(),
+	})
+}
+
+func (s *Server) handleListRFCs(c *gin.Context) {
+	s.rfcsMu.RLock()
+	defer s.rfcsMu.RUnlock()
+	if s.rfcs == nil {
+		c.JSON(http.StatusOK, []*evolve.RFC{})
+		return
+	}
+	c.JSON(http.StatusOK, s.rfcs)
+}
+
+func (s *Server) handleApproveRFC(c *gin.Context) {
+	id := c.Param("id")
+	s.rfcsMu.Lock()
+	defer s.rfcsMu.Unlock()
+	for _, r := range s.rfcs {
+		if r.ID == id {
+			r.Status = "approved"
+			c.JSON(http.StatusOK, r)
+			return
+		}
+	}
+	c.JSON(http.StatusNotFound, gin.H{"error": "RFC not found"})
+}
+
+func (s *Server) handleRejectRFC(c *gin.Context) {
+	id := c.Param("id")
+	s.rfcsMu.Lock()
+	defer s.rfcsMu.Unlock()
+	for _, r := range s.rfcs {
+		if r.ID == id {
+			r.Status = "rejected"
+			c.JSON(http.StatusOK, r)
+			return
+		}
+	}
+	c.JSON(http.StatusNotFound, gin.H{"error": "RFC not found"})
 }
