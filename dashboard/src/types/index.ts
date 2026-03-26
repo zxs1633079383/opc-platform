@@ -193,3 +193,44 @@ export interface Settings {
   notificationsEnabled?: boolean
   [key: string]: unknown
 }
+
+export interface ModelInfo {
+  id: string
+  provider: string
+  displayName: string
+  tier: 'economy' | 'standard' | 'premium'
+  costPer1k: number
+  capability: 'fast' | 'balanced' | 'reasoning'
+  default?: boolean
+}
+
+export interface RFC {
+  id: string
+  title: string
+  problem: string
+  solution: string
+  expectedBenefit: string
+  risk: string
+  status: 'pending' | 'approved' | 'rejected'
+  createdAt: string
+}
+
+export interface SystemMetrics {
+  successRate: number
+  avgLatency: number
+  costPerGoal: number
+  retryRate: number
+  coverageGap: number
+  errorPatterns: string[]
+  timestamp: string
+}
+
+export interface WizardRequest {
+  type: string
+  description: string
+  model: string
+  fallbackModel?: string
+  preset: 'light' | 'standard' | 'power' | 'custom'
+  replicas: number
+  onExceed: string
+}

@@ -1,4 +1,4 @@
-import type { Agent, Task, Metrics, CostDataPoint, Workflow, WorkflowRun, CostEvent, LogEntry, Company, Goal, Project, HierarchyStats, Issue } from '@/types'
+import type { Agent, Task, Metrics, CostDataPoint, Workflow, WorkflowRun, WorkflowStepResult, CostEvent, LogEntry, Company, Goal, Project, HierarchyStats, Issue, ModelInfo, RFC, SystemMetrics, WizardRequest } from '@/types'
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:9527/api'
 
@@ -307,6 +307,55 @@ export async function updateSettings(settings: Record<string, unknown>): Promise
     body: JSON.stringify(settings),
   })
   if (!response.ok) throw new Error('Failed to save settings')
+}
+
+export async function fetchModels(): Promise<ModelInfo[]> {
+  return fetchJson<ModelInfo[]>('/models')
+}
+
+export async function createAgentWizard(data: WizardRequest): Promise<{ name: string; message: string }> {
+  const response = await fetch(`${API_BASE}/agents/wizard`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  if (!response.ok) throw new Error('Failed to create agent')
+  return response.json()
+}
+
+export async function fetchGoalDetail(id: string): Promise<Goal> {
+  return fetchJson<Goal>(`/goals/${id}`)
+}
+
+export async function fetchGoalIssues(goalId: string): Promise<Issue[]> {
+  return fetchJson<Issue[]>(`/goals/${goalId}/issues`)
+}
+
+export async function approveGoal(id: string): Promise<void> {
+  const response = await fetch(`${API_BASE}/goals/${id}/approve`, { method: 'POST' })
+  if (!response.ok) throw new Error('Failed to approve goal')
+}
+
+export async function fetchRFCs(): Promise<RFC[]> {
+  return fetchJson<RFC[]>('/system/rfcs')
+}
+
+export async function approveRFC(id: string): Promise<void> {
+  const response = await fetch(`${API_BASE}/system/rfcs/${id}/approve`, { method: 'POST' })
+  if (!response.ok) throw new Error('Failed to approve RFC')
+}
+
+export async function rejectRFC(id: string): Promise<void> {
+  const response = await fetch(`${API_BASE}/system/rfcs/${id}/reject`, { method: 'POST' })
+  if (!response.ok) throw new Error('Failed to reject RFC')
+}
+
+export async function fetchSystemMetrics(): Promise<SystemMetrics[]> {
+  return fetchJson<SystemMetrics[]>('/system/metrics')
+}
+
+export async function fetchWorkflowRunSteps(name: string, runId: string): Promise<WorkflowStepResult[]> {
+  return fetchJson<WorkflowStepResult[]>(`/workflows/${name}/runs/${runId}/steps`)
 }
 
 export async function createAgent(agent: { name: string; type: string; model?: string }): Promise<Agent> {
