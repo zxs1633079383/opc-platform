@@ -16,8 +16,10 @@
 | 2 | Multi-Agent | Week 3-4 | 🟢 已完成 | 100% |
 | 3 | Orchestration | Week 5-6 | 🟢 已完成 | 100% |
 | 4 | Production Ready | Week 7-8 | 🟢 已完成 | 100% |
-| 5 | AI Goal Decomposition | Week 9-10 | 🔵 进行中 | 0% |
+| 5 | AI Goal Decomposition | Week 9-10 | 🟢 已完成 | 100% |
+| 5b | Federation Auth + Retry | Week 10-11 | 🟢 已完成 | 100% |
 | 6 | Production Hardening | Week 11-13 | 🟢 已完成 | 100% |
+| 7 | Self-Evolving Loop | Week 14-16 | 🟡 进行中 | 30% |
 
 **状态图例**：
 - ⚪ 未开始
@@ -604,129 +606,129 @@ opctl audit export --format json    # 导出审计日志
 ## Project 5.1: Goal AI 分解引擎
 
 ### Task 5.1.1: 类型系统扩展
-**优先级**: P0 | **预估**: 0.5d | **状态**: ⚪
+**优先级**: P0 | **预估**: 0.5d | **状态**: 🟢
 
 | Issue | 描述 | 状态 | 负责人 |
 |-------|------|------|--------|
-| 5.1.1.1 | GoalBody 新增 AutoDecompose/Constraints/Approval 字段 | ⚪ | - |
-| 5.1.1.2 | GoalRecord 新增 Phase/DecompositionPlan 字段 | ⚪ | - |
-| 5.1.1.3 | goal.go 新增 GoalPhase 状态枚举 | ⚪ | - |
-| 5.1.1.4 | DecomposeResult 扩展（Complexity/DependsOn/AgentSuggestion） | ⚪ | - |
+| 5.1.1.1 | GoalBody 新增 AutoDecompose/Constraints/Approval 字段 | 🟢 | - |
+| 5.1.1.2 | GoalRecord 新增 Phase/DecompositionPlan 字段 | 🟢 | - |
+| 5.1.1.3 | goal.go 新增 GoalPhase 状态枚举 | 🟢 | - |
+| 5.1.1.4 | DecomposeResult 扩展（Complexity/DependsOn/AgentSuggestion） | 🟢 | - |
 
 **验收标准**：
-- [ ] 新字段向后兼容（AutoDecompose 默认 false）
-- [ ] 编译通过
+- [x] 新字段向后兼容（AutoDecompose 默认 false）
+- [x] 编译通过
 
 ---
 
 ### Task 5.1.2: Decomposer 接口重构
-**优先级**: P0 | **预估**: 0.5d | **状态**: ⚪
+**优先级**: P0 | **预估**: 0.5d | **状态**: 🟢
 
 | Issue | 描述 | 状态 | 负责人 |
 |-------|------|------|--------|
-| 5.1.2.1 | 将 Decomposer 改为 interface | ⚪ | - |
-| 5.1.2.2 | 当前实现改名为 StaticDecomposer | ⚪ | - |
+| 5.1.2.1 | 将 Decomposer 改为 interface | 🟢 | - |
+| 5.1.2.2 | 当前实现改名为 StaticDecomposer | 🟢 | - |
 
 **验收标准**：
-- [ ] 现有代码不受影响
-- [ ] 编译通过
+- [x] 现有代码不受影响
+- [x] 编译通过
 
 ---
 
 ### Task 5.1.3: AI Decomposer 实现
-**优先级**: P0 | **预估**: 2d | **状态**: ⚪
+**优先级**: P0 | **预估**: 2d | **状态**: 🟢
 
 | Issue | 描述 | 状态 | 负责人 |
 |-------|------|------|--------|
-| 5.1.3.1 | 新建 pkg/goal/ai_decomposer.go | ⚪ | - |
-| 5.1.3.2 | 新建 pkg/goal/prompt.go（Prompt 模板） | ⚪ | - |
-| 5.1.3.3 | 通过 Controller 调用 claude agent 执行分解 | ⚪ | - |
-| 5.1.3.4 | JSON 结构化输出解析和验证 | ⚪ | - |
-| 5.1.3.5 | 分解成本独立追踪 | ⚪ | - |
-| 5.1.3.6 | 单元测试（mock LLM 响应） | ⚪ | - |
+| 5.1.3.1 | 新建 pkg/goal/ai_decomposer.go | 🟢 | - |
+| 5.1.3.2 | 新建 pkg/goal/prompt.go（Prompt 模板） | 🟢 | - |
+| 5.1.3.3 | 通过 Controller 调用 claude agent 执行分解 | 🟢 | - |
+| 5.1.3.4 | JSON 结构化输出解析和验证 | 🟢 | - |
+| 5.1.3.5 | 分解成本独立追踪 | 🟢 | - |
+| 5.1.3.6 | 单元测试（mock LLM 响应） | 🟢 | - |
 
 **验收标准**：
-- [ ] AI 能根据 Goal 描述生成合理的 Project/Task/Issue 层级
-- [ ] JSON 解析失败有重试机制（最多 2 次）
-- [ ] 测试覆盖率 > 80%
+- [x] AI 能根据 Goal 描述生成合理的 Project/Task/Issue 层级
+- [x] JSON 解析失败有重试机制（最多 2 次）
+- [x] 测试覆盖率 > 80%
 
 ---
 
 ### Task 5.1.4: server.go Goal 流程改造
-**优先级**: P0 | **预估**: 1d | **状态**: ⚪
+**优先级**: P0 | **预估**: 1d | **状态**: 🟢
 
 | Issue | 描述 | 状态 | 负责人 |
 |-------|------|------|--------|
-| 5.1.4.1 | KindGoal 分支支持 autoDecompose 检测 | ⚪ | - |
-| 5.1.4.2 | 调用 AIDecomposer → 持久化分解结果 | ⚪ | - |
-| 5.1.4.3 | 提取现有 decomposition 逻辑为 executeDecomposition() | ⚪ | - |
-| 5.1.4.4 | 自动创建 Agent + 异步执行（复用现有逻辑） | ⚪ | - |
+| 5.1.4.1 | KindGoal 分支支持 autoDecompose 检测 | 🟢 | - |
+| 5.1.4.2 | 调用 AIDecomposer → 持久化分解结果 | 🟢 | - |
+| 5.1.4.3 | 提取现有 decomposition 逻辑为 executeDecomposition() | 🟢 | - |
+| 5.1.4.4 | 自动创建 Agent + 异步执行（复用现有逻辑） | 🟢 | - |
 
 **验收标准**：
-- [ ] autoDecompose=false 走原有流程（向后兼容）
-- [ ] autoDecompose=true 走 AI 分解流程
+- [x] autoDecompose=false 走原有流程（向后兼容）
+- [x] autoDecompose=true 走 AI 分解流程
 
 ---
 
 ## Project 5.2: Plan 审查流程
 
 ### Task 5.2.1: CLI 新增命令
-**优先级**: P0 | **预估**: 1d | **状态**: ⚪
+**优先级**: P0 | **预估**: 1d | **状态**: 🟢
 
 | Issue | 描述 | 状态 | 负责人 |
 |-------|------|------|--------|
-| 5.2.1.1 | goal create 新增 --auto-decompose flag | ⚪ | - |
-| 5.2.1.2 | 实现 opctl goal plan <id> 查看分解方案 | ⚪ | - |
-| 5.2.1.3 | 实现 opctl goal approve <id> 确认执行 | ⚪ | - |
-| 5.2.1.4 | 实现 opctl goal revise <id> --file 修改方案 | ⚪ | - |
+| 5.2.1.1 | goal create 新增 --auto-decompose flag | 🟢 | - |
+| 5.2.1.2 | 实现 opctl goal plan <id> 查看分解方案 | 🟢 | - |
+| 5.2.1.3 | 实现 opctl goal approve <id> 确认执行 | 🟢 | - |
+| 5.2.1.4 | 实现 opctl goal revise <id> --file 修改方案 | 🟢 | - |
 
 **验收标准**：
-- [ ] Plan 模式下创建 Goal 不会立即执行
-- [ ] approve 后才触发 Agent 创建和任务执行
+- [x] Plan 模式下创建 Goal 不会立即执行
+- [x] approve 后才触发 Agent 创建和任务执行
 
 ---
 
 ### Task 5.2.2: API 端点
-**优先级**: P0 | **预估**: 1d | **状态**: ⚪
+**优先级**: P0 | **预估**: 1d | **状态**: 🟢
 
 | Issue | 描述 | 状态 | 负责人 |
 |-------|------|------|--------|
-| 5.2.2.1 | GET /api/goals/:id/plan 查看分解方案 | ⚪ | - |
-| 5.2.2.2 | POST /api/goals/:id/approve 确认执行 | ⚪ | - |
-| 5.2.2.3 | POST /api/goals/:id/revise 修改方案 | ⚪ | - |
+| 5.2.2.1 | GET /api/goals/:id/plan 查看分解方案 | 🟢 | - |
+| 5.2.2.2 | POST /api/goals/:id/approve 确认执行 | 🟢 | - |
+| 5.2.2.3 | POST /api/goals/:id/revise 修改方案 | 🟢 | - |
 
 **验收标准**：
-- [ ] API 响应包含完整的分解层级树
-- [ ] approve 触发执行流程
+- [x] API 响应包含完整的分解层级树
+- [x] approve 触发执行流程
 
 ---
 
 ## Project 5.3: Guardrails 安全阀
 
 ### Task 5.3.1: 分解约束和自动模式
-**优先级**: P1 | **预估**: 1d | **状态**: ⚪
+**优先级**: P1 | **预估**: 1d | **状态**: 🟢
 
 | Issue | 描述 | 状态 | 负责人 |
 |-------|------|------|--------|
-| 5.3.1.1 | 实现 DecomposeConstraints 校验 | ⚪ | - |
-| 5.3.1.2 | 实现 --auto-approve 模式 | ⚪ | - |
-| 5.3.1.3 | 超限自动降级为 Plan 模式 | ⚪ | - |
-| 5.3.1.4 | 分解成本预估 | ⚪ | - |
+| 5.3.1.1 | 实现 DecomposeConstraints 校验 | 🟢 | - |
+| 5.3.1.2 | 实现 --auto-approve 模式 | 🟢 | - |
+| 5.3.1.3 | 超限自动降级为 Plan 模式 | 🟢 | - |
+| 5.3.1.4 | 分解成本预估 | 🟢 | - |
 
 **验收标准**：
-- [ ] 超过 maxProjects/maxTasks/maxAgents 限制时自动降级
-- [ ] --auto-approve 模式下带 guardrail 直接执行
+- [x] 超过 maxProjects/maxTasks/maxAgents 限制时自动降级
+- [x] --auto-approve 模式下带 guardrail 直接执行
 
 ---
 
 ## Phase 5 交付物清单
 
-- [ ] AI Goal 分解引擎（AIDecomposer）
-- [ ] Plan → Approve → Execute 三段式流程
-- [ ] Guardrails 安全阀
-- [ ] CLI 命令：goal plan/approve/revise
-- [ ] API 端点：plan/approve/revise
-- [ ] 单元测试
+- [x] AI Goal 分解引擎（AIDecomposer）
+- [x] Plan → Approve → Execute 三段式流程
+- [x] Guardrails 安全阀
+- [x] CLI 命令：goal plan/approve/revise
+- [x] API 端点：plan/approve/revise
+- [x] 单元测试
 
 ---
 
@@ -735,90 +737,90 @@ opctl audit export --format json    # 导出审计日志
 ## Project 5.4: P0 紧急修复
 
 ### Task 5.4.1: OpenClaw Execute 结果存储
-**优先级**: P0 | **预估**: 0.5h | **状态**: ⚪
+**优先级**: P0 | **预估**: 0.5h | **状态**: 🟢
 | Issue | 描述 | 状态 |
 |-------|------|------|
-| 5.4.1.1 | openclaw Execute() 返回 result 写入 TaskRecord.Result | ⚪ |
+| 5.4.1.1 | openclaw Execute() 返回 result 写入 TaskRecord.Result | 🟢 |
 
 ### Task 5.4.2: Workflow Toggle 端点
-**优先级**: P0 | **预估**: 0.5h | **状态**: ⚪
+**优先级**: P0 | **预估**: 0.5h | **状态**: 🟢
 | Issue | 描述 | 状态 |
 |-------|------|------|
-| 5.4.2.1 | 后端 PUT /api/workflows/:name/toggle handler | ⚪ |
+| 5.4.2.1 | 后端 PUT /api/workflows/:name/toggle handler | 🟢 |
 
 ### Task 5.4.3: Federation 认证
-**优先级**: P0 | **预估**: 3h | **状态**: ⚪
+**优先级**: P0 | **预估**: 3h | **状态**: 🟢
 | Issue | 描述 | 状态 |
 |-------|------|------|
-| 5.4.3.1 | 新建 pkg/federation/auth.go (HMAC-SHA256) | ⚪ |
-| 5.4.3.2 | Company 注册时生成 APIKey | ⚪ |
-| 5.4.3.3 | server.go federation auth middleware | ⚪ |
+| 5.4.3.1 | 新建 pkg/federation/auth.go (HMAC-SHA256) | 🟢 |
+| 5.4.3.2 | Company 注册时生成 APIKey | 🟢 |
+| 5.4.3.3 | server.go federation auth middleware | 🟢 |
 
 ## Project 5.5: P1 核心完善
 
 ### Task 5.5.1: OpenClaw 密钥持久化 + 自动读 Token
-**优先级**: P1 | **预估**: 2h | **状态**: ⚪
+**优先级**: P1 | **预估**: 2h | **状态**: 🟢
 | Issue | 描述 | 状态 |
 |-------|------|------|
-| 5.5.1.1 | loadOrCreateIdentity() 持久化到 ~/.opc/identity/ | ⚪ |
-| 5.5.1.2 | 自动读取 ~/.openclaw/openclaw.json gateway token | ⚪ |
+| 5.5.1.1 | loadOrCreateIdentity() 持久化到 ~/.opc/identity/ | 🟢 |
+| 5.5.1.2 | 自动读取 ~/.openclaw/openclaw.json gateway token | 🟢 |
 
 ### Task 5.5.2: Goal 分解持久化 + 成本追踪
-**优先级**: P1 | **预估**: 1h | **状态**: ⚪
+**优先级**: P1 | **预估**: 1h | **状态**: 🟢
 | Issue | 描述 | 状态 |
 |-------|------|------|
-| 5.5.2.1 | DecompositionPlan JSON 写入 GoalRecord | ⚪ |
-| 5.5.2.2 | DecomposeCost 字段写入 | ⚪ |
+| 5.5.2.1 | DecompositionPlan JSON 写入 GoalRecord | 🟢 |
+| 5.5.2.2 | DecomposeCost 字段写入 | 🟢 |
 
 ### Task 5.5.3: Federation 断线重试
-**优先级**: P1 | **预估**: 3h | **状态**: ⚪
+**优先级**: P1 | **预估**: 3h | **状态**: 🟢
 | Issue | 描述 | 状态 |
 |-------|------|------|
-| 5.5.3.1 | 新建 pkg/federation/retry.go (RetryQueue) | ⚪ |
-| 5.5.3.2 | callback 失败入队 + 指数退避重试 | ⚪ |
-| 5.5.3.3 | federation_retry_queue 表 | ⚪ |
+| 5.5.3.1 | 新建 pkg/federation/retry.go (RetryQueue) | 🟢 |
+| 5.5.3.2 | callback 失败入队 + 指数退避重试 | 🟢 |
+| 5.5.3.3 | federation_retry_queue 表 | 🟢 |
 
 ### Task 5.5.4: Workflow 执行详情
-**优先级**: P1 | **预估**: 3h | **状态**: ⚪
+**优先级**: P1 | **预估**: 3h | **状态**: 🟢
 | Issue | 描述 | 状态 |
 |-------|------|------|
-| 5.5.4.1 | 后端 GET /api/workflows/:name/runs + runs/:id | ⚪ |
-| 5.5.4.2 | 前端 WorkflowRunDetail 组件 | ⚪ |
+| 5.5.4.1 | 后端 GET /api/workflows/:name/runs + runs/:id | 🟢 |
+| 5.5.4.2 | 前端 WorkflowRunDetail 组件 | 🟢 |
 
 ### Task 5.5.5: 远程 Goal 自动分解
-**优先级**: P1 | **预估**: 2h | **状态**: ⚪
+**优先级**: P1 | **预估**: 2h | **状态**: 🟢
 | Issue | 描述 | 状态 |
 |-------|------|------|
-| 5.5.5.1 | 远程 OPC 收到 federated goal 后触发 AI 分解 | ⚪ |
+| 5.5.5.1 | 远程 OPC 收到 federated goal 后触发 AI 分解 | 🟢 |
 
 ### Task 5.5.6: Milestone 推送通知
-**优先级**: P1 | **预估**: 1.5h | **状态**: ⚪
+**优先级**: P1 | **预估**: 1.5h | **状态**: 🟢
 | Issue | 描述 | 状态 |
 |-------|------|------|
-| 5.5.6.1 | project 完成时 notifyMilestone() 回调主 OPC | ⚪ |
+| 5.5.6.1 | project 完成时 notifyMilestone() 回调主 OPC | 🟢 |
 
 ## Project 5.6: P2 体验增强
 
 ### Task 5.6.1: CLI goal plan 树形输出
-**优先级**: P2 | **预估**: 1h | **状态**: ⚪
+**优先级**: P2 | **预估**: 1h | **状态**: 🟢
 
 ### Task 5.6.2: Dashboard Goals 分解可视化
-**优先级**: P2 | **预估**: 2h | **状态**: ⚪
+**优先级**: P2 | **预估**: 2h | **状态**: 🟢
 
 ### Task 5.6.3: Workflow 编辑功能
-**优先级**: P2 | **预估**: 4h | **状态**: ⚪
+**优先级**: P2 | **预估**: 4h | **状态**: 🟢
 
 ### Task 5.6.4: 迭代分解
-**优先级**: P2 | **预估**: 6h | **状态**: ⚪
+**优先级**: P2 | **预估**: 6h | **状态**: 🟢
 
 ### Task 5.6.5: 智能路由（按公司类型）
-**优先级**: P2 | **预估**: 2h | **状态**: ⚪
+**优先级**: P2 | **预估**: 2h | **状态**: 🟢
 
 ### Task 5.6.6: 跨公司依赖管理
-**优先级**: P2 | **预估**: 4h | **状态**: ⚪
+**优先级**: P2 | **预估**: 4h | **状态**: 🟢
 
 ### Task 5.6.7: Federation 远程公司原生渲染
-**优先级**: P2 | **预估**: 2h | **状态**: ⚪
+**优先级**: P2 | **预估**: 2h | **状态**: 🟢
 
 ---
 
@@ -831,15 +833,15 @@ opctl audit export --format json    # 导出审计日志
 
 | Issue | 描述 | 状态 | 负责人 |
 |-------|------|------|--------|
-| 6.1.1.1 | 新建 `federated_goal_runs` 表 (goalId, goalName, description, callbackURL, status, traceContext, createdAt, updatedAt) | ⚪ | - |
-| 6.1.1.2 | 新建 `federated_goal_projects` 表 (goalId, projectName, companyId, agentName, status, result, dependencies JSON, layer int) | ⚪ | - |
-| 6.1.1.3 | storage.go 新增 SaveFederatedGoalRun / GetFederatedGoalRun / UpdateFederatedGoalProject / ListActiveFederatedGoalRuns CRUD 方法 | ⚪ | - |
-| 6.1.1.4 | 单元测试（覆盖 CRUD + 边界条件） | ⚪ | - |
+| 6.1.1.1 | 新建 `federated_goal_runs` 表 (goalId, goalName, description, callbackURL, status, traceContext, createdAt, updatedAt) | 🟢 | - |
+| 6.1.1.2 | 新建 `federated_goal_projects` 表 (goalId, projectName, companyId, agentName, status, result, dependencies JSON, layer int) | 🟢 | - |
+| 6.1.1.3 | storage.go 新增 SaveFederatedGoalRun / GetFederatedGoalRun / UpdateFederatedGoalProject / ListActiveFederatedGoalRuns CRUD 方法 | 🟢 | - |
+| 6.1.1.4 | 单元测试（覆盖 CRUD + 边界条件） | 🟢 | - |
 
 **验收标准**：
-- [ ] FederatedGoalRun 持久化到 SQLite
-- [ ] 重启后可以从 DB reload 未完成的 run
-- [ ] 测试覆盖率 > 80%
+- [x] FederatedGoalRun 持久化到 SQLite
+- [x] 重启后可以从 DB reload 未完成的 run
+- [x] 测试覆盖率 > 80%
 
 ---
 
@@ -848,15 +850,15 @@ opctl audit export --format json    # 导出审计日志
 
 | Issue | 描述 | 状态 | 负责人 |
 |-------|------|------|--------|
-| 6.1.2.1 | server 启动时调用 ListActiveFederatedGoalRuns() 加载未完成 run 到内存 | ⚪ | - |
-| 6.1.2.2 | 根据每个 project 的 status 判断恢复策略：Pending→重新 dispatch, Running→等待 callback 超时后重试, Completed→跳过 | ⚪ | - |
-| 6.1.2.3 | createFederatedGoal / handleCallback 流程中同步写 DB | ⚪ | - |
-| 6.1.2.4 | 集成测试：启动→创建 Goal→Kill→重启→验证恢复 | ⚪ | - |
+| 6.1.2.1 | server 启动时调用 ListActiveFederatedGoalRuns() 加载未完成 run 到内存 | 🟢 | - |
+| 6.1.2.2 | 根据每个 project 的 status 判断恢复策略：Pending→重新 dispatch, Running→等待 callback 超时后重试, Completed→跳过 | 🟢 | - |
+| 6.1.2.3 | createFederatedGoal / handleCallback 流程中同步写 DB | 🟢 | - |
+| 6.1.2.4 | 集成测试：启动→创建 Goal→Kill→重启→验证恢复 | 🟢 | - |
 
 **验收标准**：
-- [ ] Kill 进程后重启，未完成的联邦 Goal 自动恢复执行
-- [ ] 已完成的 Project 不会重复执行
-- [ ] 恢复过程有审计日志
+- [x] Kill 进程后重启，未完成的联邦 Goal 自动恢复执行
+- [x] 已完成的 Project 不会重复执行
+- [x] 恢复过程有审计日志
 
 ---
 
@@ -867,15 +869,15 @@ opctl audit export --format json    # 导出审计日志
 
 | Issue | 描述 | 状态 | 负责人 |
 |-------|------|------|--------|
-| 6.2.1.1 | OpenClaw adapter 新增 querySessionSnapshot(sessionId) 方法，通过 WS RPC 查询 session 统计 | ⚪ | - |
-| 6.2.1.2 | Execute() 完成后，如果 result.TokensIn == 0，自动调用 snapshot 补全 | ⚪ | - |
-| 6.2.1.3 | Fallback: 基于模型定价表 + 输入/输出字符数估算 token（pkg/cost/cost.go CalculateCost 扩展） | ⚪ | - |
-| 6.2.1.4 | 单元测试（mock WS 响应 + fallback 路径） | ⚪ | - |
+| 6.2.1.1 | OpenClaw adapter 新增 querySessionSnapshot(sessionId) 方法，通过 WS RPC 查询 session 统计 | 🟢 | - |
+| 6.2.1.2 | Execute() 完成后，如果 result.TokensIn == 0，自动调用 snapshot 补全 | 🟢 | - |
+| 6.2.1.3 | Fallback: 基于模型定价表 + 输入/输出字符数估算 token（pkg/cost/cost.go CalculateCost 扩展） | 🟢 | - |
+| 6.2.1.4 | 单元测试（mock WS 响应 + fallback 路径） | 🟢 | - |
 
 **验收标准**：
-- [ ] OpenClaw 执行后 token 数据不再为 0
-- [ ] 有 snapshot 时用精确数据，无 snapshot 时用估算
-- [ ] 估算值在日志中标记为 `estimated: true`
+- [x] OpenClaw 执行后 token 数据不再为 0
+- [x] 有 snapshot 时用精确数据，无 snapshot 时用估算
+- [x] 估算值在日志中标记为 `estimated: true`
 
 ---
 
@@ -886,18 +888,18 @@ opctl audit export --format json    # 导出审计日志
 
 | Issue | 描述 | 状态 | 负责人 |
 |-------|------|------|--------|
-| 6.3.1.1 | assessor.go 新增 ResultCategory 枚举：EmptyResult / ExecutionError / QualityIssue / Satisfied | ⚪ | - |
-| 6.3.1.2 | AssessResult 返回 Category 字段，heuristic 阶段先分类再决策 | ⚪ | - |
-| 6.3.1.3 | EmptyResult 策略：检查 task prompt 是否为"检查/验证"类 → 直接 pass；否则重试 1 次（非 3 次） | ⚪ | - |
-| 6.3.1.4 | ExecutionError 策略：记录错误 → 重试（最多 2 次）→ 标记 failed | ⚪ | - |
-| 6.3.1.5 | QualityIssue 策略：走现有 A2A 评审流程（最多 3 次） | ⚪ | - |
-| 6.3.1.6 | server.go handleCallback 中替换现有硬编码重试逻辑为新策略 | ⚪ | - |
-| 6.3.1.7 | 单元测试（每种 category 的决策路径） | ⚪ | - |
+| 6.3.1.1 | assessor.go 新增 ResultCategory 枚举：EmptyResult / ExecutionError / QualityIssue / Satisfied | 🟢 | - |
+| 6.3.1.2 | AssessResult 返回 Category 字段，heuristic 阶段先分类再决策 | 🟢 | - |
+| 6.3.1.3 | EmptyResult 策略：检查 task prompt 是否为"检查/验证"类 → 直接 pass；否则重试 1 次（非 3 次） | 🟢 | - |
+| 6.3.1.4 | ExecutionError 策略：记录错误 → 重试（最多 2 次）→ 标记 failed | 🟢 | - |
+| 6.3.1.5 | QualityIssue 策略：走现有 A2A 评审流程（最多 3 次） | 🟢 | - |
+| 6.3.1.6 | server.go handleCallback 中替换现有硬编码重试逻辑为新策略 | 🟢 | - |
+| 6.3.1.7 | 单元测试（每种 category 的决策路径） | 🟢 | - |
 
 **验收标准**：
-- [ ] 空结果不再触发 3 轮完整评审
-- [ ] 执行错误和质量问题有不同的重试上限
-- [ ] 评审 token 消耗下降 > 30%
+- [x] 空结果不再触发 3 轮完整评审
+- [x] 执行错误和质量问题有不同的重试上限
+- [x] 评审 token 消耗下降 > 30%
 
 ---
 
@@ -908,17 +910,17 @@ opctl audit export --format json    # 导出审计日志
 
 | Issue | 描述 | 状态 | 负责人 |
 |-------|------|------|--------|
-| 6.4.1.1 | lifecycle.go 健康检查 interval 改为可配置（AgentSpec.spec.health.interval，默认 30s） | ⚪ | - |
-| 6.4.1.2 | 新增连续失败计数器 consecutiveFailures，阈值可配（默认 3） | ⚪ | - |
-| 6.4.1.3 | OpenClaw adapter Health() 增强：除连接检查外，发送 ping RPC 验证 gateway 可达 | ⚪ | - |
-| 6.4.1.4 | 不健康时自动重启：先 Stop() → 等待 backoff → Start()；重启后自动恢复 Running 状态的 task | ⚪ | - |
-| 6.4.1.5 | 健康状态变更写审计日志（healthy→unhealthy, restart triggered, restart succeeded/failed） | ⚪ | - |
-| 6.4.1.6 | 单元测试 + 集成测试（模拟 agent 不健康→自动重启→恢复） | ⚪ | - |
+| 6.4.1.1 | lifecycle.go 健康检查 interval 改为可配置（AgentSpec.spec.health.interval，默认 30s） | 🟢 | - |
+| 6.4.1.2 | 新增连续失败计数器 consecutiveFailures，阈值可配（默认 3） | 🟢 | - |
+| 6.4.1.3 | OpenClaw adapter Health() 增强：除连接检查外，发送 ping RPC 验证 gateway 可达 | 🟢 | - |
+| 6.4.1.4 | 不健康时自动重启：先 Stop() → 等待 backoff → Start()；重启后自动恢复 Running 状态的 task | 🟢 | - |
+| 6.4.1.5 | 健康状态变更写审计日志（healthy→unhealthy, restart triggered, restart succeeded/failed） | 🟢 | - |
+| 6.4.1.6 | 单元测试 + 集成测试（模拟 agent 不健康→自动重启→恢复） | 🟢 | - |
 
 **验收标准**：
-- [ ] Agent 不响应时 3 次检查后自动重启
-- [ ] 重启后未完成任务自动续接
-- [ ] 健康事件在审计日志中可追溯
+- [x] Agent 不响应时 3 次检查后自动重启
+- [x] 重启后未完成任务自动续接
+- [x] 健康事件在审计日志中可追溯
 
 ---
 
@@ -929,20 +931,20 @@ opctl audit export --format json    # 导出审计日志
 
 | Issue | 描述 | 状态 | 负责人 |
 |-------|------|------|--------|
-| 6.5.1.1 | pkg/cost/enforcer.go 新建 QuotaEnforcer：Execute 前检查 perTask/perHour/perDay token 预算 | ⚪ | - |
-| 6.5.1.2 | QuotaEnforcer 检查 CostLimit：perTask/perDay/perMonth 成本限制 | ⚪ | - |
-| 6.5.1.3 | OnExceed 策略实现：pause（暂停 agent）/ alert（仅告警继续）/ reject（拒绝任务） | ⚪ | - |
-| 6.5.1.4 | server.go 在 dispatchTask / Execute 前调用 QuotaEnforcer.Check() | ⚪ | - |
-| 6.5.1.5 | Goal 级配额：Goal 创建时可设置总预算，超限暂停整个 Goal | ⚪ | - |
-| 6.5.1.6 | 配额事件写审计日志（approaching_limit / exceeded / paused / resumed） | ⚪ | - |
-| 6.5.1.7 | API: GET /api/quota/status 查看当前配额使用情况 | ⚪ | - |
-| 6.5.1.8 | 单元测试（各种超限场景 + OnExceed 策略） | ⚪ | - |
+| 6.5.1.1 | pkg/cost/enforcer.go 新建 QuotaEnforcer：Execute 前检查 perTask/perHour/perDay token 预算 | 🟢 | - |
+| 6.5.1.2 | QuotaEnforcer 检查 CostLimit：perTask/perDay/perMonth 成本限制 | 🟢 | - |
+| 6.5.1.3 | OnExceed 策略实现：pause（暂停 agent）/ alert（仅告警继续）/ reject（拒绝任务） | 🟢 | - |
+| 6.5.1.4 | server.go 在 dispatchTask / Execute 前调用 QuotaEnforcer.Check() | 🟢 | - |
+| 6.5.1.5 | Goal 级配额：Goal 创建时可设置总预算，超限暂停整个 Goal | 🟢 | - |
+| 6.5.1.6 | 配额事件写审计日志（approaching_limit / exceeded / paused / resumed） | 🟢 | - |
+| 6.5.1.7 | API: GET /api/quota/status 查看当前配额使用情况 | 🟢 | - |
+| 6.5.1.8 | 单元测试（各种超限场景 + OnExceed 策略） | 🟢 | - |
 
 **验收标准**：
-- [ ] tokenBudget.perDay 超限时 agent 自动暂停
-- [ ] costLimit.perMonth 超限时拒绝新任务
-- [ ] 80% 阈值时发出告警
-- [ ] 测试覆盖率 > 80%
+- [x] tokenBudget.perDay 超限时 agent 自动暂停
+- [x] costLimit.perMonth 超限时拒绝新任务
+- [x] 80% 阈值时发出告警
+- [x] 测试覆盖率 > 80%
 
 ---
 
@@ -953,29 +955,29 @@ opctl audit export --format json    # 导出审计日志
 
 | Issue | 描述 | 状态 | 负责人 |
 |-------|------|------|--------|
-| 6.6.1.1 | 新建 .github/workflows/integration-test.yml | ⚪ | - |
-| 6.6.1.2 | Mock OpenClaw Gateway（轻量 WS echo server，返回固定 token 数据） | ⚪ | - |
-| 6.6.1.3 | Mock Claude Code（shell script 模拟 --print 输出 JSON） | ⚪ | - |
-| 6.6.1.4 | CI 中运行 6 scenarios，每个 scenario 独立报告 pass/fail | ⚪ | - |
-| 6.6.1.5 | 失败时上传日志 artifact + 阻断 PR merge | ⚪ | - |
-| 6.6.1.6 | 添加 CI badge 到 README | ⚪ | - |
+| 6.6.1.1 | 新建 .github/workflows/integration-test.yml | 🟢 | - |
+| 6.6.1.2 | Mock OpenClaw Gateway（轻量 WS echo server，返回固定 token 数据） | 🟢 | - |
+| 6.6.1.3 | Mock Claude Code（shell script 模拟 --print 输出 JSON） | 🟢 | - |
+| 6.6.1.4 | CI 中运行 6 scenarios，每个 scenario 独立报告 pass/fail | 🟢 | - |
+| 6.6.1.5 | 失败时上传日志 artifact + 阻断 PR merge | 🟢 | - |
+| 6.6.1.6 | 添加 CI badge 到 README | 🟢 | - |
 
 **验收标准**：
-- [ ] PR 提交自动触发 integration test
-- [ ] 6 scenarios 全部通过才能 merge
-- [ ] CI 运行时间 < 5 分钟（mock 模式）
+- [x] PR 提交自动触发 integration test
+- [x] 6 scenarios 全部通过才能 merge
+- [x] CI 运行时间 < 5 分钟（mock 模式）
 
 ---
 
 ## Phase 6 交付物清单
 
-- [ ] 联邦 Goal 持久化 + 重启恢复
-- [ ] OpenClaw token 数据补全
-- [ ] 智能重试策略（三类分类）
-- [ ] Agent 健康检查增强 + 自动重启
-- [ ] Token/Cost 配额实时执行
-- [ ] E2E 测试 CI pipeline
-- [ ] 全部特性单元测试 (覆盖率 > 80%)
+- [x] 联邦 Goal 持久化 + 重启恢复
+- [x] OpenClaw token 数据补全
+- [x] 智能重试策略（三类分类）
+- [x] Agent 健康检查增强 + 自动重启
+- [x] Token/Cost 配额实时执行
+- [x] E2E 测试 CI pipeline
+- [x] 全部特性单元测试 (覆盖率 > 80%)
 
 ---
 
@@ -984,7 +986,7 @@ opctl audit export --format json    # 导出审计日志
 ## Project 7.1: Observe — 运行指标采集
 
 ### Task 7.1.1: 核心指标体系
-**优先级**: P0 | **预估**: 2d | **状态**: ⚪
+**优先级**: P0 | **预估**: 2d | **状态**: 🟡
 
 | Issue | 描述 | 状态 | 负责人 |
 |-------|------|------|--------|
@@ -1002,7 +1004,7 @@ opctl audit export --format json    # 导出审计日志
 ## Project 7.2: Orient — AI 分析与提案生成
 
 ### Task 7.2.1: 异常检测 + RFC 生成
-**优先级**: P0 | **预估**: 2d | **状态**: ⚪
+**优先级**: P0 | **预估**: 2d | **状态**: 🟡
 
 | Issue | 描述 | 状态 | 负责人 |
 |-------|------|------|--------|
@@ -1074,5 +1076,5 @@ opctl audit export --format json    # 导出审计日志
 
 ---
 
-*最后更新: 2026-03-17*
+*最后更新: 2026-03-26*
 *下次 Review: 每周一 10:00*
