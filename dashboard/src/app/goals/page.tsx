@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import Link from 'next/link'
 import {
   Plus, Target, ChevronDown, ChevronRight, Trash2,
   FolderKanban, ListTodo, Bot, Loader2, Zap, CheckCircle2,
@@ -55,7 +56,7 @@ function GoalCard({ goal, onDelete }: { goal: Goal; onDelete: () => void }) {
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{goal.name}</h3>
+              <Link href={`/goals/${goal.id}`} className="text-lg font-semibold text-gray-900 dark:text-white hover:text-blue-600 dark:hover:text-blue-400">{goal.name}</Link>
               <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${phase.color} bg-opacity-10`}>
                 <PhaseIcon className={`w-3 h-3 ${isDecomposing ? 'animate-spin' : ''}`} />
                 {phase.label}
